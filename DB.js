@@ -9,7 +9,7 @@ const connection = mysql.createConnection({
   host: process.env.DB_HOST || "localhost",
   user: process.env.DB_USER || "root",
   password: process.env.DB_PASSWORD || "",
-  port: process.env.DB_PORT || 33066,
+  port: process.env.DB_PORT || 3306,
   multipleStatements: true,
 });
 
@@ -18,7 +18,7 @@ connection.connect((err) => {
     console.error("❌ Error connecting to MySQL:", err.message);
     process.exit(1);
   } else {
-    console.log(`✅ Connected to MySQL server at: ${connection.config.host}`);
+    console.log(`✅ Connected to MySQL server at: ${connection.config.host}:${connection.config.port}`);
     initializeDatabase();
   }
 });
