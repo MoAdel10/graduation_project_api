@@ -205,5 +205,31 @@ const updateUserProfile = async (req, res) => {
     return res.status(200).json({ msg: "Profile updated successfully" });
   });
 };
+// ================= LOGOUT =================
+const Logout = (req, res) => {
+  const { userId } = req.user; // From verifyToken middleware
 
-module.exports = { SignUp, Login, getUserProfieWithToken, updateUserProfile };
+  if (!userId) {
+    return res.status(401).json({ msg: "Unauthorized" });
+  }
+
+  connection.query(
+    "UPDATE users SET is_online = ? WHERE user_id = ?",
+    [false, userId],
+    (err, result) => {
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).send("Database error");
+      }
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ msg: "User not found" });
+      }
+
+      return res.status(200).json({ msg: "User logged out successfully" });
+    }
+  );
+};
+
+
+module.exports = { SignUp, Login, getUserProfieWithToken, updateUserProfile , Logout };
