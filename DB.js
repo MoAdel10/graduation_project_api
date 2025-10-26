@@ -50,7 +50,7 @@ function initializeDatabase() {
 function createTables() {
   const usersTable = `
     CREATE TABLE IF NOT EXISTS Users (
-      user_id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
       first_name VARCHAR(100),
       second_name VARCHAR(100),
       email VARCHAR(255) UNIQUE,
@@ -61,60 +61,61 @@ function createTables() {
     );
   `;
 
-  const propertyTable = `
-    CREATE TABLE IF NOT EXISTS Property (
-      property_id INT AUTO_INCREMENT PRIMARY KEY,
-      owner_id INT,
-      property_name VARCHAR(255),
-      property_desc TEXT,
-      location VARCHAR(255),
-      price_per_day DECIMAL(10,2),
-      size VARCHAR(50),
-      bedrooms_no INT,
-      beds_no INT,
-      bathrooms_no INT,
-      images JSON,
-      ownership_proofs JSON,
-      is_available BOOLEAN DEFAULT TRUE,
-      rate FLOAT,
-      FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE
-    );
-  `;
+  const propertyTable = ` 
+  CREATE TABLE IF NOT EXISTS Property (
+    property_id INT AUTO_INCREMENT PRIMARY KEY,
+    owner_id CHAR(36),
+    property_name VARCHAR(255),
+    property_desc TEXT,
+    location VARCHAR(255),
+    price_per_day DECIMAL(10,2),
+    size VARCHAR(50),
+    bedrooms_no INT,
+    beds_no INT,
+    bathrooms_no INT,
+    images JSON,
+    ownership_proofs JSON,
+    is_available BOOLEAN DEFAULT TRUE,
+    rate FLOAT,
+    FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE
+  );
+`;
 
-  const rentalTable = `
-    CREATE TABLE IF NOT EXISTS Rental (
-      rental_id INT AUTO_INCREMENT PRIMARY KEY,
-      renter_id INT,
-      lessor_id INT,
-      property_id INT,
-      rentend_on DATE,
-      rent_duration INT,
-      end_date DATE,
-      price_per_day DECIMAL(10,2),
-      total_price DECIMAL(10,2),
-      status VARCHAR(50),
-      FOREIGN KEY (renter_id) REFERENCES Users(user_id),
-      FOREIGN KEY (lessor_id) REFERENCES Users(user_id),
-      FOREIGN KEY (property_id) REFERENCES Property(property_id)
-    );
-  `;
+const rentalTable = `
+  CREATE TABLE IF NOT EXISTS Rental (
+    rental_id INT AUTO_INCREMENT PRIMARY KEY,
+    renter_id CHAR(36),
+    lessor_id CHAR(36),
+    property_id INT,
+    rentend_on DATE,
+    rent_duration INT,
+    end_date DATE,
+    price_per_day DECIMAL(10,2),
+    total_price DECIMAL(10,2),
+    status VARCHAR(50),
+    FOREIGN KEY (renter_id) REFERENCES Users(user_id),
+    FOREIGN KEY (lessor_id) REFERENCES Users(user_id),
+    FOREIGN KEY (property_id) REFERENCES Property(property_id)
+  );
+`;
 
-  const rentalLogsTable = `
-    CREATE TABLE IF NOT EXISTS Rental_logs (
-      rental_id INT AUTO_INCREMENT PRIMARY KEY,
-      renter_id INT,
-      lessor_id INT,
-      property_id INT,
-      rentend_on DATE,
-      rent_duration INT,
-      end_date DATE,
-      price_per_day DECIMAL(10,2),
-      total_price DECIMAL(10,2),
-      FOREIGN KEY (renter_id) REFERENCES Users(user_id),
-      FOREIGN KEY (lessor_id) REFERENCES Users(user_id),
-      FOREIGN KEY (property_id) REFERENCES Property(property_id)
-    );
-  `;
+const rentalLogsTable = `
+  CREATE TABLE IF NOT EXISTS Rental_logs (
+    rental_id INT AUTO_INCREMENT PRIMARY KEY,
+    renter_id CHAR(36),
+    lessor_id CHAR(36),
+    property_id INT,
+    rentend_on DATE,
+    rent_duration INT,
+    end_date DATE,
+    price_per_day DECIMAL(10,2),
+    total_price DECIMAL(10,2),
+    FOREIGN KEY (renter_id) REFERENCES Users(user_id),
+    FOREIGN KEY (lessor_id) REFERENCES Users(user_id),
+    FOREIGN KEY (property_id) REFERENCES Property(property_id)
+  );
+`;
+
 
   connection.query(usersTable, (err) => {
     if (err)

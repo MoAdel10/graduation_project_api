@@ -45,7 +45,7 @@ const SignUp = async (req, res) => {
       }
 
       try {
-        const saltRounds =  SALT_ROUNDS || 10;
+        const saltRounds =   parseInt(process.env.SALT_ROUNDS, 10) || 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
 
         const insertSql =
@@ -61,7 +61,7 @@ const SignUp = async (req, res) => {
 
             return res.status(201).json({
               msg: "User created successfully",
-              userId: insertResult.insertId,
+              // userId: insertResult.insertId,
             });
           }
         );
