@@ -48,18 +48,23 @@ function initializeDatabase() {
 }
 
 function createTables() {
-  const usersTable = `
-    CREATE TABLE IF NOT EXISTS Users (
-      user_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
-      first_name VARCHAR(100),
-      second_name VARCHAR(100),
-      email VARCHAR(255) UNIQUE,
-      password VARCHAR(255),
-      properties JSON,
-      favorites JSON,
-      is_online BOOLEAN DEFAULT FALSE
-    );
-  `;
+const usersTable = `
+CREATE TABLE IF NOT EXISTS Users (
+  user_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+  first_name VARCHAR(100),
+  second_name VARCHAR(100),
+  email VARCHAR(255) UNIQUE,
+  password VARCHAR(255),
+  properties JSON,
+  favorites JSON,
+  is_online BOOLEAN DEFAULT FALSE,
+  is_verified BOOLEAN DEFAULT FALSE,
+  otp_code VARCHAR(255),
+  otp_expires_at DATETIME,
+  reset_token VARCHAR(255),         
+  reset_expires_at DATETIME          
+);
+`;
 
   const propertyTable = ` 
   CREATE TABLE IF NOT EXISTS Property (
