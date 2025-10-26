@@ -117,7 +117,7 @@ const Login = async (req, res) => {
         msg: "Login successful",
         token,
         user: {
-          // id: user.user_id,
+          id: user.user_id,
           firstName: user.first_name,
           secondName: user.second_name,
           email: user.email,
