@@ -4,7 +4,7 @@ const router = express.Router();
 
 const verifyToken = require("../Middleware/verifyToken");
 const { upload, multerErrorHandler } = require("../Utils/multerConfig");
-const { addProperty } = require("../Controllers/PropertyController");
+const { addProperty,getProperties ,getPropertyById,editPropertyInfo,editPropertyImages } = require("../Controllers/PropertyController");
 
 
 router.post(
@@ -44,4 +44,17 @@ router.post(
   addProperty // Continue to controller logic
 );
 
+router.get("/property", getProperties);
+router.get("/property/:id", getPropertyById);
+router.put("/property/:id", verifyToken, editPropertyInfo);
+router.put(
+  "/property/:id/images",
+  verifyToken,
+  upload.fields([
+    { name: "images", maxCount: 10 },
+    { name: "ownershipProof", maxCount: 5 },
+  ]),
+  multerErrorHandler,
+  editPropertyImages
+);
 module.exports = router;
