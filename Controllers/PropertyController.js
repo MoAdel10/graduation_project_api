@@ -98,7 +98,7 @@ const addProperty = (req, res) => {
 
 const getProperties = (req, res) => {
   let { location, minPrice, maxPrice, minSize, maxSize, bedrooms, bathrooms } = req.query; 
-  // http://localhost:8000/property?minPrice=20 methal 3shan barghout maysara54
+  // http://localhost:8000/property?minPrice=20 methal 3shan barghout maysara54  (ma fuck barghout ya 3am (sarhan))
 
   // Base SQL query
   let sql = "SELECT * FROM Property WHERE 1=1";
@@ -134,14 +134,13 @@ const getProperties = (req, res) => {
     params.push(validateNumber(bathrooms));
   }
 
- 
   connection.query(sql, params, (err, results) => {
     if (err) {
       console.error("❌ Error fetching properties:", err);
       return res.status(500).json({ msg: "Database error" });
     }
 
-   
+  
     const properties = results.map((prop) => ({
       ...prop,
       images: JSON.parse(prop.images || "[]"),
@@ -154,7 +153,7 @@ const getProperties = (req, res) => {
 
 const getPropertyById = (req, res) => {
   const { id } = req.params;
-  //http://localhost:8000/property/9 [ bardo 3shan barghout ma yesar54]
+  //http://localhost:8000/property/9 [ bardo 3shan barghout ma yesar54] (ma fuck barghout ya 3am (sarhan))
   const sql = `
     SELECT 
       p.*, 
@@ -319,5 +318,50 @@ const editPropertyImages = (req, res) => {
     });
   });
 };
+// =======================Delete Properity=========================
+const deleteProperty = (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.userId; // Owner's ID from token
 
-module.exports = { addProperty ,getProperties ,getPropertyById,editPropertyInfo,editPropertyImages };
+  // Fetch the property first to verify ownership
+  connection.query("SELECT * FROM Property WHERE property_id = ?", [id], (err, results) => {
+    if (err) return res.status(500).json({ msg: "Database error" }); // 500 for DB or unexpected errors
+    if (results.length === 0) return res.status(404).json({ msg: "Property not found" }); // 404 if property doesn’t exist
+
+    const property = results[0];
+
+    // Verify ownership
+    if (property.owner_id !== userId) {
+      return res.status(403).json({ msg: "Unauthorized to delete this property" }); // 403 if user is not owner
+    }
+
+    // Delete property images and proofs from the filesystem
+    try {
+      const images = property.images ? JSON.parse(property.images) : [];
+      const proofs = property.ownership_proofs ? JSON.parse(property.ownership_proofs) : [];
+
+      [...images, ...proofs].forEach((filePath) => {
+        fs.unlink(path.join(__dirname, "..", filePath), (err) => {
+          if (err) console.warn("⚠️ Could not delete file:", filePath);
+        });
+      });
+    } catch (err) {
+      console.error("⚠️ Error parsing JSON for deletion:", err); 
+    }
+
+    // Delete the property from the database
+    connection.query("DELETE FROM Property WHERE property_id = ?", [id], (err) => {
+      if (err) return res.status(500).json({ msg: "Database error" });
+      res.status(200).json({ msg: "✅ Property deleted successfully" }); // 200 if deletion succeeds
+    }); 
+  });
+};
+
+module.exports = {
+  addProperty,
+  getProperties,
+  getPropertyById,
+  editPropertyInfo,
+  editPropertyImages,
+  deleteProperty
+};
