@@ -1,20 +1,18 @@
 const express = require("express");
 const connection = require("./DB");
 const cors = require("cors");
-const mountRoutes = require("./Routes/Routes")
+const mountRoutes = require("./Routes/Routes");
 require("dotenv").config();
-
 
 const app = express();
 const PORT = process.env.PORT || 8000;
+const isInDev = process.env.STATE; // if in development displays the http://url:port if anything else display domain [http://url]
 
-
-app.use(express.json()); 
-app.use(express.urlencoded({ extended: true })); 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 
-mountRoutes(app)
-
+mountRoutes(app);
 
 // just to test db-connection
 // if dispalys time it works
@@ -25,8 +23,8 @@ app.get("/test-db", (req, res) => {
   });
 });
 
-
-
-
-
-app.listen(PORT, () => console.log(`✅ Server running on http://${process.env.URL}${PORT}`));
+app.listen(PORT, () =>
+  isInDev == "DEV"
+    ? console.log(`✅ Server running on http://${process.env.URL}:${PORT}`)
+    : console.log(`✅ Server running on http://${process.env.URL}`)
+);

@@ -153,7 +153,7 @@ const getProperties = (req, res) => {
 
 const getPropertyById = (req, res) => {
   const { id } = req.params;
-  //http://localhost:8000/property/9 [ bardo 3shan barghout ma yesar54] (ma fuck barghout ya 3am (sarhan))[ya 3am e7na eli hanet3ab wallahi(3adel)]
+  //http://localhost:8000/property/9 [ bardo 3shan barghout ma yesar54] (ma fuck barghout ya 3am (sarhan))
   const sql = `
     SELECT 
       p.*, 
