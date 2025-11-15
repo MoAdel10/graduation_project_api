@@ -77,8 +77,8 @@ const addProperty = (req, res) => {
     validateNumber(bedroomsNumber),
     validateNumber(bedsNumber),
     validateNumber(bathroomsNumber),
-    JSON.stringify(propertyImages),
-    JSON.stringify(proofImages),
+    JSON.stringify(propertyImages), // Stored as a JSON string
+    JSON.stringify(proofImages),    // Stored as a JSON string
   ];
 
 
@@ -143,8 +143,9 @@ const getProperties = (req, res) => {
   
     const properties = results.map((prop) => ({
       ...prop,
-      images: JSON.parse(prop.images || "[]"),
-      ownership_proofs: JSON.parse(prop.ownership_proofs || "[]"),
+      // FIX: The mysql2 driver returns arrays directly for JSON fields.
+      images: prop.images || [], 
+      ownership_proofs: prop.ownership_proofs || [],
     }));
 
     res.status(200).json(properties);
@@ -177,9 +178,9 @@ const getPropertyById = (req, res) => {
 
     const property = results[0];
 
-    // Parse JSON fields
-    property.images = JSON.parse(property.images || "[]");
-    property.ownership_proofs = JSON.parse(property.ownership_proofs || "[]");
+    // FIX: Remove JSON.parse. The mysql2 driver handles parsing the JSON column.
+    property.images = property.images || [];
+    property.ownership_proofs = property.ownership_proofs || [];
 
     res.status(200).json(property);
   });
@@ -269,11 +270,12 @@ const editPropertyImages = (req, res) => {
     let oldImages = [];
     let oldProofs = [];
 
+    // FIX: Remove JSON.parse from the try block. The driver returns arrays.
     try {
-      oldImages = property.images ? JSON.parse(property.images) : [];
-      oldProofs = property.ownership_proofs ? JSON.parse(property.ownership_proofs) : [];
+      oldImages = property.images || []; 
+      oldProofs = property.ownership_proofs || [];
     } catch (err) {
-      console.error("⚠️ Failed to parse JSON:", err);
+      console.error("⚠️ Failed to handle images/proofs:", err);
     }
 
     // Replace old property images if new ones provided
@@ -305,6 +307,7 @@ const editPropertyImages = (req, res) => {
         ownership_proofs = ?
       WHERE property_id = ?
     `;
+    // JSON.stringify is still necessary here to convert the JS array back to a JSON string for the DB.
     const values = [JSON.stringify(updatedImages), JSON.stringify(updatedProofs), id];
 
     connection.query(sql, values, (err) => {
@@ -337,8 +340,9 @@ const deleteProperty = (req, res) => {
 
     // Delete property images and proofs from the filesystem
     try {
-      const images = property.images ? JSON.parse(property.images) : [];
-      const proofs = property.ownership_proofs ? JSON.parse(property.ownership_proofs) : [];
+      // FIX: Remove JSON.parse. The driver returns arrays.
+      const images = property.images || [];
+      const proofs = property.ownership_proofs || [];
 
       [...images, ...proofs].forEach((filePath) => {
         fs.unlink(path.join(__dirname, "..", filePath), (err) => {
@@ -346,7 +350,7 @@ const deleteProperty = (req, res) => {
         });
       });
     } catch (err) {
-      console.error("⚠️ Error parsing JSON for deletion:", err); 
+      console.error("⚠️ Error processing file paths for deletion:", err); 
     }
 
     // Delete the property from the database
