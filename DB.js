@@ -1,8 +1,6 @@
 const mysql = require("mysql2");
 require("dotenv").config();
 
-
-
 const DATABASE_NAME = process.env.DB_NAME || "RealEstateDB";
 
 const connection = mysql.createConnection({
@@ -18,7 +16,9 @@ connection.connect((err) => {
     console.error("❌ Error connecting to MySQL:", err.message);
     process.exit(1);
   } else {
-    console.log(`✅ Connected to MySQL server at: ${connection.config.host}:${connection.config.port}`);
+    console.log(
+      `✅ Connected to MySQL server at: ${connection.config.host}:${connection.config.port}`
+    );
     initializeDatabase();
   }
 });
@@ -48,7 +48,7 @@ function initializeDatabase() {
 }
 
 function createTables() {
-const usersTable = `
+  const usersTable = `
 CREATE TABLE IF NOT EXISTS Users (
   user_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
   first_name VARCHAR(100),
@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS Users (
   );
 `;
 
-const rentalTable = `
+  const rentalTable = `
   CREATE TABLE IF NOT EXISTS Rental (
     rental_id INT AUTO_INCREMENT PRIMARY KEY,
     renter_id CHAR(36),
@@ -104,7 +104,7 @@ const rentalTable = `
   );
 `;
 
-const rentalLogsTable = `
+  const rentalLogsTable = `
   CREATE TABLE IF NOT EXISTS Rental_logs (
     rental_id INT AUTO_INCREMENT PRIMARY KEY,
     renter_id CHAR(36),
@@ -121,11 +121,40 @@ const rentalLogsTable = `
   );
 `;
 
-
   connection.query(usersTable, (err) => {
     if (err)
       return console.error("❌ Error creating Users table:", err.message);
     console.log("✅ Users table ready");
+    const defaultUser = {
+      first_name: "Default",
+      second_name: "User",
+      email: "default@example.com",
+      password: "password123", 
+    };
+
+    const insertUserQuery = `
+      INSERT INTO Users (first_name, second_name, email, password)
+      SELECT * FROM (SELECT ? AS first_name, ? AS second_name, ? AS email, ? AS password) AS tmp
+      WHERE NOT EXISTS (
+        SELECT email FROM Users WHERE email = ?
+      ) LIMIT 1;
+    `;
+
+    connection.query(
+      insertUserQuery,
+      [
+        defaultUser.first_name,
+        defaultUser.second_name,
+        defaultUser.email,
+        defaultUser.password,
+        defaultUser.email,
+      ],
+      (err) => {
+        if (err)
+          return console.error("❌ Error inserting default user:", err.message);
+        console.log("👤 Default user ensured for frontend");
+      }
+    );
 
     connection.query(propertyTable, (err) => {
       if (err)
