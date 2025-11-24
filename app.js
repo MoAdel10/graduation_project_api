@@ -8,6 +8,15 @@ const app = express();
 const PORT = process.env.PORT || 8000;
 const isInDev = process.env.STATE; // if in development displays the http://url:port if anything else display domain [http://url]
 
+// adding the setup for using ejs 
+app.set("view engine", "ejs");
+app.set("views", "view");
+
+// adding the login for the admin 
+app.get("/admin/login", (req, res) => {
+  res.render("admin/login"); // views/admin/login.ejs
+}); 
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());

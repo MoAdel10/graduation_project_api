@@ -1,5 +1,6 @@
 const mysql = require("mysql2");
 require("dotenv").config();
+const bcrypt = require("bcrypt");
 
 const DATABASE_NAME = process.env.DB_NAME || "RealEstateDB";
 
@@ -120,6 +121,64 @@ CREATE TABLE IF NOT EXISTS Users (
     FOREIGN KEY (property_id) REFERENCES Property(property_id)
   );
 `;
+const bcrypt = require("bcrypt");
+
+// Admins table schema
+const adminsTable = `
+  CREATE TABLE IF NOT EXISTS Admins (
+    admin_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    role ENUM('admin', 'super_admin') DEFAULT 'admin',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+`;
+
+// Create Admins table
+connection.query(adminsTable, async (err) => {
+  if (err) return console.error("❌ Error creating Admins table:", err.message);
+  console.log("✅ Admins table ready");
+
+  // Insert superadmin if none
+  try {
+    const superEmail = process.env.SUPERADMIN_EMAIL;
+    const superPassword = process.env.SUPERADMIN_PASSWORD;
+    const saltRounds = parseInt(process.env.SALT_ROUNDS || 10);
+
+    // Check if superadmin already exists
+    connection.query(
+      "SELECT * FROM Admins WHERE role = 'super_admin' LIMIT 1",
+      async (err, results) => {
+        if (err) return console.error("❌ Error checking superadmin:", err);
+
+        if (results.length === 0) {
+          // Hash password
+          const hashed = await bcrypt.hash(superPassword, saltRounds);
+
+          // Insert superadmin
+          connection.query(
+            "INSERT INTO Admins (email, password, role) VALUES (?, ?, 'super_admin')",
+            [superEmail, hashed],
+            (err) => {
+              if (err) return console.error("❌ Error inserting superadmin:", err);
+
+              console.log("🟢 Superadmin created automatically:");
+              console.log(`   Email: ${superEmail}`);
+              console.log(`   Password: ${superPassword}`);
+            }
+          );
+        } else {
+          console.log("🔵 Superadmin already exists — skipping creation");
+        }
+      }
+    );
+  } catch (err) {
+    console.error("❌ Unexpected error during superadmin creation:", err);
+  }
+});
+
+
+
 
   connection.query(usersTable, (err) => {
     if (err)
