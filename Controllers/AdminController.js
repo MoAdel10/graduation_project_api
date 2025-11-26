@@ -32,24 +32,34 @@ const loginAdmin = (req, res) => {
   const sql = `SELECT * FROM Admins WHERE email = ?`;
 
   connection.query(sql, [email], async (err, result) => {
-    if (err) return res.status(500).json({ msg: "DB error" });
-    if (!result.length) return res.status(400).json({ msg: "Admin not found" });
+    if (err) return res.render("admin/login", { error: "Database error" });
+    if (!result.length)
+      return res.render("admin/login", { error: "Admin not found" });
 
     const admin = result[0];
 
     const match = await bcrypt.compare(password, admin.password);
-    if (!match) return res.status(400).json({ msg: "Invalid credentials" });
+    if (!match)
+      return res.render("admin/login", { error: "Invalid credentials" });
 
     const token = jwt.sign(
       {
-        admin_id: admin.admin_id,
+        id: admin.admin_id,
+        email: admin.email,
         role: admin.role,
       },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET_KEY,
       { expiresIn: "7d" }
     );
 
-    res.json({ msg: "Login success", token, admin });
+    res.cookie("token", token, {
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      secure: process.env.STATE != "DEV",
+      sameSite: "strict",
+    });
+
+    res.redirect("/admin/dashboard");
   });
 };
 

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f4;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .container {
+            background: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 0 12px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        a {
+            display: inline-block;
+            margin-top: 15px;
+            text-decoration: none;
+            color: white;
+            background: #333;
+            padding: 10px 20px;
+            border-radius: 6px;
+        }
+
+        a:hover {
+            background: #111;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome, <%= admin.email %>!</h1>
+        <p>Admin ID: <%= admin.id %></p>
+        <p>Admin Role: <%= admin.role %></p>
+        <a href="/admin/logout">Logout</a>
+    </div>
+</body>
+</html>
