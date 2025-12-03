@@ -35,8 +35,6 @@ router.get("/admin/dashboard", adminAuth, async (req, res) => {
     users,
     properties
   });
-
-  // return res.render("admin/dashboard",{admin:req.admin})
 });
 
 
