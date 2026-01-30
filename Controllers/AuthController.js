@@ -52,7 +52,8 @@ const SignUp = async (req, res) => {
         const saltRounds = parseInt(process.env.SALT_ROUNDS, 10) || 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-        const insertSql = "INSERT INTO users (first_name, second_name, email, password) VALUES (?, ?, ?, ?)";
+        const insertSql =
+          "INSERT INTO users (first_name, second_name, email, password) VALUES (?, ?, ?, ?)";
         connection.query(
           insertSql,
           [firstName, secondName, email, hashedPassword],
@@ -75,7 +76,9 @@ const SignUp = async (req, res) => {
                 const userId = userResult[0].user_id;
 
                 // Generate 6-digit OTP
-                const otp = Math.floor(100000 + Math.random() * 900000).toString();
+                const otp = Math.floor(
+                  100000 + Math.random() * 900000,
+                ).toString();
                 const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // expires in 10 minutes
 
                 // Save OTP in database using the actual UUID
@@ -90,10 +93,13 @@ const SignUp = async (req, res) => {
                       try {
                         await sendOTP(email, otp);
                       } catch (emailError) {
-                        console.error("❌ Error sending OTP email:", emailError);
+                        console.error(
+                          "❌ Error sending OTP email:",
+                          emailError,
+                        );
                       }
                     }
-                  }
+                  },
                 );
 
                 // Return success response with actual UUID
@@ -101,15 +107,48 @@ const SignUp = async (req, res) => {
                   msg: "User created successfully. Please verify your email.",
                   userId: userId, // ← Now this will be the actual UUID!
                 });
-              }
+              },
             );
-          }
+          },
         );
       } catch (error) {
         console.error("Hashing error:", error);
         return res.status(500).json({ msg: "Error while hashing password" });
       }
-    }
+    },
+  );
+};
+// ==================== Request OTP ============================
+const requestOTP = (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ msg: "Email is required" });
+  }
+
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // expires in 10 minutes
+
+  connection.query(
+    "UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE email = ?",
+    [otp, otpExpiresAt, email],
+    async (err) => {
+      if (err) {
+        console.error("❌ Error saving OTP:", err);
+        return res.status(500).json({ msg: "Internal server error" });
+
+      } else {
+        // Send OTP via email
+        try {
+          await sendOTP(email, otp);
+          return res.status(200).json({ msg: "OTP sent successfully" });
+        } catch (emailError) {
+          console.error("❌ Error sending OTP email:", emailError);
+          return res.status(500).json({ msg: "Internal server error" });
+        }
+      }
+    },
   );
 };
 
@@ -121,44 +160,48 @@ const verifyOTP = (req, res) => {
     return res.status(400).json({ msg: "Email and OTP are required" });
   }
 
-  connection.query("SELECT * FROM users WHERE email = ?", [email], (err, result) => {
-    if (err) {
-      console.error("Database error:", err);
-      return res.status(500).send("Database error");
-    }
-
-    if (result.length === 0) {
-      return res.status(404).json({ msg: "User not found" });
-    }
-
-    const user = result[0];
-
-    if (user.is_verified) {
-      return res.status(400).json({ msg: "User already verified" });
-    }
-
-    if (user.otp_code !== otp) {
-      return res.status(400).json({ msg: "Invalid OTP" });
-    }
-
-    if (new Date() > new Date(user.otp_expires_at)) {
-      return res.status(400).json({ msg: "OTP expired" });
-    }
-
-    // Update user to verified
-    connection.query(
-      "UPDATE users SET is_verified = ?, otp_code = NULL, otp_expires_at = NULL WHERE user_id = ?",
-      [true, user.user_id],
-      (updateErr) => {
-        if (updateErr) {
-          console.error("Database error:", updateErr);
-          return res.status(500).send("Database error");
-        }
-
-        return res.status(200).json({ msg: "Email verified successfully" });
+  connection.query(
+    "SELECT * FROM users WHERE email = ?",
+    [email],
+    (err, result) => {
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).send("Database error");
       }
-    );
-  });
+
+      if (result.length === 0) {
+        return res.status(404).json({ msg: "User not found" });
+      }
+
+      const user = result[0];
+
+      if (user.is_verified) {
+        return res.status(400).json({ msg: "User already verified" });
+      }
+
+      if (user.otp_code !== otp) {
+        return res.status(400).json({ msg: "Invalid OTP" });
+      }
+
+      if (new Date() > new Date(user.otp_expires_at)) {
+        return res.status(400).json({ msg: "OTP expired" });
+      }
+
+      // Update user to verified
+      connection.query(
+        "UPDATE users SET is_verified = ?, otp_code = NULL, otp_expires_at = NULL WHERE user_id = ?",
+        [true, user.user_id],
+        (updateErr) => {
+          if (updateErr) {
+            console.error("Database error:", updateErr);
+            return res.status(500).send("Database error");
+          }
+
+          return res.status(200).json({ msg: "Email verified successfully" });
+        },
+      );
+    },
+  );
 };
 
 // ================= REQUEST PASSWORD RESET =================
@@ -167,27 +210,34 @@ const requestPasswordReset = (req, res) => {
 
   if (!email) return res.status(400).json({ msg: "Email is required" });
 
-  connection.query("SELECT * FROM users WHERE email = ?", [email], (err, result) => {
-    if (err) return res.status(500).send("Database error");
-    if (result.length === 0) return res.status(404).json({ msg: "User not found" });
+  connection.query(
+    "SELECT * FROM users WHERE email = ?",
+    [email],
+    (err, result) => {
+      if (err) return res.status(500).send("Database error");
+      if (result.length === 0)
+        return res.status(404).json({ msg: "User not found" });
 
-    const user = result[0];
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    const resetExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+      const user = result[0];
+      const resetToken = crypto.randomBytes(32).toString("hex");
+      const resetExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 min
 
-    connection.query(
-      "UPDATE users SET reset_token = ?, reset_expires_at = ? WHERE user_id = ?",
-      [resetToken, resetExpires, user.user_id],
-      async (err2) => {
-        if (err2) return res.status(500).send("Database error");
+      connection.query(
+        "UPDATE users SET reset_token = ?, reset_expires_at = ? WHERE user_id = ?",
+        [resetToken, resetExpires, user.user_id],
+        async (err2) => {
+          if (err2) return res.status(500).send("Database error");
 
-        const resetLink = `http://localhost:8000/auth/reset-password/${resetToken}`;
-        await sendPasswordResetEmail(email, resetLink);
+          const resetLink = `http://localhost:8000/auth/reset-password/${resetToken}`;
+          await sendPasswordResetEmail(email, resetLink);
 
-        return res.status(200).json({ msg: "Password reset link sent to your email" });
-      }
-    );
-  });
+          return res
+            .status(200)
+            .json({ msg: "Password reset link sent to your email" });
+        },
+      );
+    },
+  );
 };
 
 // ================= VERIFY RESET TOKEN =================
@@ -199,10 +249,11 @@ const verifyResetToken = (req, res) => {
     [token],
     (err, result) => {
       if (err) return res.status(500).send("Database error");
-      if (result.length === 0) return res.status(400).json({ msg: "Invalid or expired token" });
+      if (result.length === 0)
+        return res.status(400).json({ msg: "Invalid or expired token" });
 
       return res.status(200).json({ msg: "Token is valid" });
-    }
+    },
   );
 };
 
@@ -212,7 +263,9 @@ const resetPassword = async (req, res) => {
   const { newPassword } = req.body;
 
   if (!newPassword || newPassword.length < 8) {
-    return res.status(400).json({ msg: "Password must be at least 8 characters" });
+    return res
+      .status(400)
+      .json({ msg: "Password must be at least 8 characters" });
   }
 
   connection.query(
@@ -220,7 +273,8 @@ const resetPassword = async (req, res) => {
     [token],
     async (err, result) => {
       if (err) return res.status(500).send("Database error");
-      if (result.length === 0) return res.status(400).json({ msg: "Invalid or expired token" });
+      if (result.length === 0)
+        return res.status(400).json({ msg: "Invalid or expired token" });
 
       const user = result[0];
       const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -231,16 +285,16 @@ const resetPassword = async (req, res) => {
         (err2) => {
           if (err2) return res.status(500).send("Database error");
           return res.status(200).json({ msg: "Password reset successfully" });
-        }
+        },
       );
-    }
+    },
   );
 };
 
 // ================= LOGIN =================
 const Login = async (req, res) => {
   if (!req.body || Object.keys(req.body).length === 0) {
-    return res.status(400).json({msg: "Email and password are required"});
+    return res.status(400).json({ msg: "Email and password are required" });
   }
 
   const { email, password } = req.body;
@@ -263,7 +317,9 @@ const Login = async (req, res) => {
 
       // ✅ ensure the user verified their email before login
       if (!user.is_verified) {
-        return res.status(403).json({ msg: "Please verify your email before logging in" });
+        return res
+          .status(403)
+          .json({ msg: "Please verify your email before logging in" });
       }
 
       const isMatch = await bcrypt.compare(password, user.password);
@@ -275,7 +331,7 @@ const Login = async (req, res) => {
       const token = jwt.sign(
         { userId: user.user_id, email: user.email },
         process.env.JWT_SECRET_KEY,
-        { expiresIn: "3h" }
+        { expiresIn: "3h" },
       );
 
       connection.query("UPDATE users SET is_online = ? WHERE user_id = ?", [
@@ -293,7 +349,7 @@ const Login = async (req, res) => {
           email: user.email,
         },
       });
-    }
+    },
   );
 };
 
@@ -317,7 +373,7 @@ const getUserProfieWithToken = (req, res) => {
 
       const user = result[0];
       return res.json({ user });
-    }
+    },
   );
 };
 
@@ -399,18 +455,19 @@ const Logout = (req, res) => {
       }
 
       return res.status(200).json({ msg: "User logged out successfully" });
-    }
+    },
   );
 };
 
-module.exports = { 
-  SignUp, 
-  verifyOTP, 
-  Login, 
-  getUserProfieWithToken, 
-  updateUserProfile, 
-  Logout, 
-  requestPasswordReset, 
-  verifyResetToken, 
-  resetPassword 
+module.exports = {
+  SignUp,
+  verifyOTP,
+  Login,
+  getUserProfieWithToken,
+  updateUserProfile,
+  Logout,
+  requestPasswordReset,
+  verifyResetToken,
+  resetPassword,
+  requestOTP
 };

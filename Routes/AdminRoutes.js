@@ -33,7 +33,7 @@ router.get("/admin/dashboard", adminAuth, async (req, res) => {
     section,
     admins,
     users,
-    properties
+    properties: [{property_id:2,property_name:"test",owner:"test",owner_id:"a3e5a975-d056-11f0-b491-0a002700000c",location:"test",verified:false}]
   });
 });
 

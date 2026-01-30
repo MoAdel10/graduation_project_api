@@ -18,7 +18,7 @@ connection.connect((err) => {
     process.exit(1);
   } else {
     console.log(
-      `✅ Connected to MySQL server at: ${connection.config.host}:${connection.config.port}`
+      `✅ Connected to MySQL server at: ${connection.config.host}:${connection.config.port}`,
     );
     initializeDatabase();
   }
@@ -44,7 +44,7 @@ function initializeDatabase() {
         console.log(`🔄 Using database: ${DATABASE_NAME}`);
         createTables();
       });
-    }
+    },
   );
 }
 
@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS Users (
     images JSON,
     ownership_proofs JSON,
     is_available BOOLEAN DEFAULT TRUE,
+    is_verified BOOLEAN DEFAULT FALSE,
     rate FLOAT,
     FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE
   );
@@ -121,10 +122,10 @@ CREATE TABLE IF NOT EXISTS Users (
     FOREIGN KEY (property_id) REFERENCES Property(property_id)
   );
 `;
-const bcrypt = require("bcrypt");
+  const bcrypt = require("bcrypt");
 
-// Admins table schema
-const adminsTable = `
+  // Admins table schema
+  const adminsTable = `
   CREATE TABLE IF NOT EXISTS Admins (
     admin_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -134,51 +135,66 @@ const adminsTable = `
   );
 `;
 
-// Create Admins table
-connection.query(adminsTable, async (err) => {
-  if (err) return console.error("❌ Error creating Admins table:", err.message);
-  console.log("✅ Admins table ready");
+const verificationRequestsTable = `
+  CREATE TABLE IF NOT EXISTS VerificationRequests (
+    request_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    property_id INT NOT NULL, 
+    user_id CHAR(36) NOT NULL,
+    admin_id CHAR(36) DEFAULT NULL,
+    status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+    rejection_reason TEXT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE,
+    FOREIGN KEY (admin_id) REFERENCES Admins(admin_id) ON DELETE SET NULL,
+    FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
+  );
+`;
 
-  // Insert superadmin if none
-  try {
-    const superEmail = process.env.SUPERADMIN_EMAIL;
-    const superPassword = process.env.SUPERADMIN_PASSWORD;
-    const saltRounds = parseInt(process.env.SALT_ROUNDS || 10);
+  // Create Admins table
+  connection.query(adminsTable, async (err) => {
+    if (err)
+      return console.error("❌ Error creating Admins table:", err.message);
+    console.log("✅ Admins table ready");
 
-    // Check if superadmin already exists
-    connection.query(
-      "SELECT * FROM Admins WHERE role = 'super_admin' LIMIT 1",
-      async (err, results) => {
-        if (err) return console.error("❌ Error checking superadmin:", err);
+    // Insert superadmin if none
+    try {
+      const superEmail = process.env.SUPERADMIN_EMAIL;
+      const superPassword = process.env.SUPERADMIN_PASSWORD;
+      const saltRounds = parseInt(process.env.SALT_ROUNDS || 10);
 
-        if (results.length === 0) {
-          // Hash password
-          const hashed = await bcrypt.hash(superPassword, saltRounds);
+      // Check if superadmin already exists
+      connection.query(
+        "SELECT * FROM Admins WHERE role = 'super_admin' LIMIT 1",
+        async (err, results) => {
+          if (err) return console.error("❌ Error checking superadmin:", err);
 
-          // Insert superadmin
-          connection.query(
-            "INSERT INTO Admins (email, password, role) VALUES (?, ?, 'super_admin')",
-            [superEmail, hashed],
-            (err) => {
-              if (err) return console.error("❌ Error inserting superadmin:", err);
+          if (results.length === 0) {
+            // Hash password
+            const hashed = await bcrypt.hash(superPassword, saltRounds);
 
-              console.log("🟢 Superadmin created automatically:");
-              console.log(`   Email: ${superEmail}`);
-              console.log(`   Password: ${superPassword}`);
-            }
-          );
-        } else {
-          console.log("🔵 Superadmin already exists — skipping creation");
-        }
-      }
-    );
-  } catch (err) {
-    console.error("❌ Unexpected error during superadmin creation:", err);
-  }
-});
+            // Insert superadmin
+            connection.query(
+              "INSERT INTO Admins (email, password, role) VALUES (?, ?, 'super_admin')",
+              [superEmail, hashed],
+              (err) => {
+                if (err)
+                  return console.error("❌ Error inserting superadmin:", err);
 
-
-
+                console.log("🟢 Superadmin created automatically:");
+                console.log(`   Email: ${superEmail}`);
+                console.log(`   Password: ${superPassword}`);
+              },
+            );
+          } else {
+            console.log("🔵 Superadmin already exists — skipping creation");
+          }
+        },
+      );
+    } catch (err) {
+      console.error("❌ Unexpected error during superadmin creation:", err);
+    }
+  });
 
   connection.query(usersTable, (err) => {
     if (err)
@@ -188,7 +204,7 @@ connection.query(adminsTable, async (err) => {
       first_name: "Default",
       second_name: "User",
       email: "default@example.com",
-      password: "password123", 
+      password: "password123",
     };
 
     const insertUserQuery = `
@@ -212,7 +228,7 @@ connection.query(adminsTable, async (err) => {
         if (err)
           return console.error("❌ Error inserting default user:", err.message);
         console.log("👤 Default user ensured for frontend");
-      }
+      },
     );
 
     connection.query(propertyTable, (err) => {
@@ -229,9 +245,17 @@ connection.query(adminsTable, async (err) => {
           if (err)
             return console.error(
               "❌ Error creating Rental_logs table:",
-              err.message
+              err.message,
             );
           console.log("✅ Rental_logs table ready");
+          connection.query(verificationRequestsTable, (err) => {
+            if (err)
+              return console.error(
+                "❌ Error creating verification Requests table:",
+                err.message,
+              );
+            console.log("✅ verification Requests table ready");
+          });
         });
       });
     });

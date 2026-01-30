@@ -34,11 +34,14 @@ const addProperty = (req, res) => {
   }
 
   const propertyImages =
-    req.files["images"]?.map((file) => `uploads/property/${file.filename}`) || [];
+    req.files["images"]?.map((file) => `uploads/property/${file.filename}`) ||
+    [];
   const proofImages =
-    req.files["ownershipProof"]?.map((file) => `uploads/property/${file.filename}`) || [];
+    req.files["ownershipProof"]?.map(
+      (file) => `uploads/property/${file.filename}`,
+    ) || [];
 
-    if (!propertyImages|| !proofImages) {
+  if (!propertyImages || !proofImages) {
     return res
       .status(400)
       .json({ msg: "Please upload property and ownership images" });
@@ -78,10 +81,8 @@ const addProperty = (req, res) => {
     validateNumber(bedsNumber),
     validateNumber(bathroomsNumber),
     JSON.stringify(propertyImages), // Stored as a JSON string
-    JSON.stringify(proofImages),    // Stored as a JSON string
+    JSON.stringify(proofImages), // Stored as a JSON string
   ];
-
-
 
   connection.query(sql, values, (err, result) => {
     if (err) {
@@ -97,7 +98,8 @@ const addProperty = (req, res) => {
 };
 
 const getProperties = (req, res) => {
-  let { location, minPrice, maxPrice, minSize, maxSize, bedrooms, bathrooms } = req.query; 
+  let { location, minPrice, maxPrice, minSize, maxSize, bedrooms, bathrooms } =
+    req.query;
   // http://localhost:8000/property?minPrice=20 methal 3shan barghout maysara54  (ma fuck barghout ya 3am (sarhan))
 
   // Base SQL query
@@ -140,11 +142,10 @@ const getProperties = (req, res) => {
       return res.status(500).json({ msg: "Database error" });
     }
 
-  
     const properties = results.map((prop) => ({
       ...prop,
       // FIX: The mysql2 driver returns arrays directly for JSON fields.
-      images: prop.images || [], 
+      images: prop.images || [],
       ownership_proofs: prop.ownership_proofs || [],
     }));
 
@@ -207,7 +208,8 @@ const editPropertyInfo = (req, res) => {
     [id],
     (err, results) => {
       if (err) return res.status(500).json({ msg: "Database error" });
-      if (results.length === 0) return res.status(404).json({ msg: "Property not found" });
+      if (results.length === 0)
+        return res.status(404).json({ msg: "Property not found" });
 
       const property = results[0];
       if (property.owner_id !== userId)
@@ -240,9 +242,18 @@ const editPropertyInfo = (req, res) => {
 
       connection.query(sql, values, (err) => {
         if (err) return res.status(500).json({ msg: "Database error" });
-        res.status(200).json({ msg: "✅ Property info updated successfully" });
+        triggerReverification(connection, id, userId, (err) => {
+          if (err)
+            return res
+              .status(500)
+              .json({ msg: "Failed to trigger re-verification" });
+
+          res.status(200).json({
+            msg: "✅ Info updated. Property is now pending re-verification.",
+          });
+        });
       });
-    }
+    },
   );
 };
 
@@ -250,76 +261,98 @@ const editPropertyImages = (req, res) => {
   const { id } = req.params;
   const userId = req.user.userId;
 
-  const newPropertyImages = req.files["images"]?.map((f) => `uploads/property/${f.filename}`) || [];
-  const newProofImages = req.files["ownershipProof"]?.map((f) => `uploads/proof/${f.filename}`) || [];
+  const newPropertyImages =
+    req.files["images"]?.map((f) => `uploads/property/${f.filename}`) || [];
+  const newProofImages =
+    req.files["ownershipProof"]?.map((f) => `uploads/proof/${f.filename}`) ||
+    [];
 
   // Require at least one set of images
   if (newPropertyImages.length === 0 && newProofImages.length === 0) {
-    return res.status(400).json({ msg: "❌ You must upload at least property images or proof images" });
+    return res.status(400).json({
+      msg: "❌ You must upload at least property images or proof images",
+    });
   }
 
   // Fetch the property to verify ownership
-  connection.query("SELECT * FROM Property WHERE property_id = ?", [id], (err, results) => {
-    if (err) return res.status(500).json({ msg: "Database error" });
-    if (results.length === 0) return res.status(404).json({ msg: "Property not found" });
+  connection.query(
+    "SELECT * FROM Property WHERE property_id = ?",
+    [id],
+    (err, results) => {
+      if (err) return res.status(500).json({ msg: "Database error" });
+      if (results.length === 0)
+        return res.status(404).json({ msg: "Property not found" });
 
-    const property = results[0];
-    if (property.owner_id !== userId)
-      return res.status(403).json({ msg: "Unauthorized" });
+      const property = results[0];
+      if (property.owner_id !== userId)
+        return res.status(403).json({ msg: "Unauthorized" });
 
-    let oldImages = [];
-    let oldProofs = [];
+      let oldImages = [];
+      let oldProofs = [];
 
-    // FIX: Remove JSON.parse from the try block. The driver returns arrays.
-    try {
-      oldImages = property.images || []; 
-      oldProofs = property.ownership_proofs || [];
-    } catch (err) {
-      console.error("⚠️ Failed to handle images/proofs:", err);
-    }
+      // FIX: Remove JSON.parse from the try block. The driver returns arrays.
+      try {
+        oldImages = property.images || [];
+        oldProofs = property.ownership_proofs || [];
+      } catch (err) {
+        console.error("⚠️ Failed to handle images/proofs:", err);
+      }
 
-    // Replace old property images if new ones provided
-    let updatedImages = oldImages;
-    if (newPropertyImages.length > 0) {
-      oldImages.forEach((file) => {
-        fs.unlink(path.join(__dirname, "..", file), (err) => {
-          if (err) console.warn("⚠️ Could not delete old property image:", file);
+      // Replace old property images if new ones provided
+      let updatedImages = oldImages;
+      if (newPropertyImages.length > 0) {
+        oldImages.forEach((file) => {
+          fs.unlink(path.join(__dirname, "..", file), (err) => {
+            if (err)
+              console.warn("⚠️ Could not delete old property image:", file);
+          });
         });
-      });
-      updatedImages = newPropertyImages;
-    }
+        updatedImages = newPropertyImages;
+      }
 
-    // Replace old proof images if new ones provided
-    let updatedProofs = oldProofs;
-    if (newProofImages.length > 0) {
-      oldProofs.forEach((file) => {
-        fs.unlink(path.join(__dirname, "..", file), (err) => {
-          if (err) console.warn("⚠️ Could not delete old proof image:", file);
+      // Replace old proof images if new ones provided
+      let updatedProofs = oldProofs;
+      if (newProofImages.length > 0) {
+        oldProofs.forEach((file) => {
+          fs.unlink(path.join(__dirname, "..", file), (err) => {
+            if (err) console.warn("⚠️ Could not delete old proof image:", file);
+          });
         });
-      });
-      updatedProofs = newProofImages;
-    }
+        updatedProofs = newProofImages;
+      }
 
-    // Update the database
-    const sql = `
+      // Update the database
+      const sql = `
       UPDATE Property SET
         images = ?,
         ownership_proofs = ?
       WHERE property_id = ?
     `;
-    // JSON.stringify is still necessary here to convert the JS array back to a JSON string for the DB.
-    const values = [JSON.stringify(updatedImages), JSON.stringify(updatedProofs), id];
+      // JSON.stringify is still necessary here to convert the JS array back to a JSON string for the DB.
+      const values = [
+        JSON.stringify(updatedImages),
+        JSON.stringify(updatedProofs),
+        id,
+      ];
 
-    connection.query(sql, values, (err) => {
-      if (err) return res.status(500).json({ msg: "Database error" });
+      connection.query(sql, values, (err) => {
+        if (err) return res.status(500).json({ msg: "Database error" });
 
-      res.status(200).json({
-        msg: "✅ Property images updated successfully",
-        images: updatedImages,
-        ownershipProofs: updatedProofs,
+        triggerReverification(connection, id, userId, (err) => {
+          if (err)
+            return res
+              .status(500)
+              .json({ msg: "Failed to trigger re-verification" });
+
+          res.status(200).json({
+            msg: "✅ Property images updated successfully",
+            images: updatedImages,
+            ownershipProofs: updatedProofs,
+          });
+        });
       });
-    });
-  });
+    },
+  );
 };
 // =======================Delete Properity=========================
 const deleteProperty = (req, res) => {
@@ -327,38 +360,49 @@ const deleteProperty = (req, res) => {
   const userId = req.user.userId; // Owner's ID from token
 
   // Fetch the property first to verify ownership
-  connection.query("SELECT * FROM Property WHERE property_id = ?", [id], (err, results) => {
-    if (err) return res.status(500).json({ msg: "Database error" }); // 500 for DB or unexpected errors
-    if (results.length === 0) return res.status(404).json({ msg: "Property not found" }); // 404 if property doesn’t exist
+  connection.query(
+    "SELECT * FROM Property WHERE property_id = ?",
+    [id],
+    (err, results) => {
+      if (err) return res.status(500).json({ msg: "Database error" }); // 500 for DB or unexpected errors
+      if (results.length === 0)
+        return res.status(404).json({ msg: "Property not found" }); // 404 if property doesn’t exist
 
-    const property = results[0];
+      const property = results[0];
 
-    // Verify ownership
-    if (property.owner_id !== userId) {
-      return res.status(403).json({ msg: "Unauthorized to delete this property" }); // 403 if user is not owner
-    }
+      // Verify ownership
+      if (property.owner_id !== userId) {
+        return res
+          .status(403)
+          .json({ msg: "Unauthorized to delete this property" }); // 403 if user is not owner
+      }
 
-    // Delete property images and proofs from the filesystem
-    try {
-      // FIX: Remove JSON.parse. The driver returns arrays.
-      const images = property.images || [];
-      const proofs = property.ownership_proofs || [];
+      // Delete property images and proofs from the filesystem
+      try {
+        // FIX: Remove JSON.parse. The driver returns arrays.
+        const images = property.images || [];
+        const proofs = property.ownership_proofs || [];
 
-      [...images, ...proofs].forEach((filePath) => {
-        fs.unlink(path.join(__dirname, "..", filePath), (err) => {
-          if (err) console.warn("⚠️ Could not delete file:", filePath);
+        [...images, ...proofs].forEach((filePath) => {
+          fs.unlink(path.join(__dirname, "..", filePath), (err) => {
+            if (err) console.warn("⚠️ Could not delete file:", filePath);
+          });
         });
-      });
-    } catch (err) {
-      console.error("⚠️ Error processing file paths for deletion:", err); 
-    }
+      } catch (err) {
+        console.error("⚠️ Error processing file paths for deletion:", err);
+      }
 
-    // Delete the property from the database
-    connection.query("DELETE FROM Property WHERE property_id = ?", [id], (err) => {
-      if (err) return res.status(500).json({ msg: "Database error" });
-      res.status(200).json({ msg: "✅ Property deleted successfully" }); // 200 if deletion succeeds
-    }); 
-  });
+      // Delete the property from the database
+      connection.query(
+        "DELETE FROM Property WHERE property_id = ?",
+        [id],
+        (err) => {
+          if (err) return res.status(500).json({ msg: "Database error" });
+          res.status(200).json({ msg: "✅ Property deleted successfully" }); // 200 if deletion succeeds
+        },
+      );
+    },
+  );
 };
 
 module.exports = {
@@ -367,5 +411,5 @@ module.exports = {
   getPropertyById,
   editPropertyInfo,
   editPropertyImages,
-  deleteProperty
+  deleteProperty,
 };
