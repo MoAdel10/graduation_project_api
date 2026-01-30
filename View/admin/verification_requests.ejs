@@ -1,0 +1,58 @@
+<%- include('../partials/header') %>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Ownership Verification Requests</h2>
+        <span class="badge">Pending: <%= requests.length %></span>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Property ID</th>
+                <th>Property Name</th>
+                <th>Owner Name</th>
+                <th>Document Link</th>
+                <th>Request Date</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <% if (requests.length > 0) { %>
+                <% requests.forEach(req => { %>
+                <tr>
+                    <td><%= req.property_id %></td>
+                    <td><%= req.property_name %></td>
+                        
+                    <td>
+                        <strong><%= req.first_name %> <%= req.second_name %></strong><br>
+                    </td>
+                   <td>
+                         <a href="/admin/properties/view/<%= req.property_id %>" class="btn-view">
+                            Inspect Property
+                         </a>
+                    </td>
+                    <td><%= new Date(req.created_at).toLocaleDateString() %></td>
+                    <td>    
+                        <div style="display: flex; gap: 10px;">
+                            <form action="/admin/verification/approve/<%= req.request_id %>" method="POST" style="margin: 0;">
+                                <button type="submit" style="background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Approve</button>
+                            </form>
+                            
+                            <form action="/admin/verification/reject/<%= req.request_id %>" method="POST" style="margin: 0;">
+                                <button type="submit" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Reject</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                <% }) %>
+            <% } else { %>
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 20px; color: #666;">No pending verification requests found.</td>
+                </tr>
+            <% } %>
+        </tbody>
+    </table>
+</div>
+
+<%- include('../partials/footer') %>

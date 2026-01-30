@@ -1,0 +1,15 @@
+<%- include('../partials/header') %>
+<div class="card">
+    <h2>Admin Management</h2>
+    <table>
+        <thead>
+            <tr><th>ID</th><th>Email</th><th>Role</th></tr>
+        </thead>
+        <tbody>
+            <% admins.forEach(a => { %>
+                <tr><td><%= a.admin_id %></td><td><%= a.email %></td><td><%= a.role %></td></tr>
+            <% }) %>
+        </tbody>
+    </table>
+</div>
+<%- include('../partials/footer') %>

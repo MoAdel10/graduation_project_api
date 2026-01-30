@@ -59,7 +59,7 @@ const loginAdmin = (req, res) => {
       sameSite: "strict",
     });
 
-    res.redirect("/admin/dashboard");
+    res.redirect("/admin/admins");
   });
 };
 

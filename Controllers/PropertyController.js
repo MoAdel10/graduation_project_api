@@ -3,6 +3,7 @@ const validateNumber = require("../Utils/validateNumber");
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
+const triggerReverification = require("../Utils/triggerReverification");
 
 const addProperty = (req, res) => {
   if (!req.body || Object.keys(req.body).length === 0) {
@@ -38,7 +39,7 @@ const addProperty = (req, res) => {
     [];
   const proofImages =
     req.files["ownershipProof"]?.map(
-      (file) => `uploads/property/${file.filename}`,
+      (file) => `uploads/proof/${file.filename}`,
     ) || [];
 
   if (!propertyImages || !proofImages) {
@@ -90,9 +91,16 @@ const addProperty = (req, res) => {
       return res.status(500).json({ msg: "Database error" });
     }
 
-    res.status(201).json({
-      msg: "Property added successfully",
-      propertyId: result.insertId,
+    triggerReverification(connection, result.insertId, req.user.userId, (err) => {
+      if (err)
+        return res
+          .status(500)
+          .json({ msg: "Failed to trigger re-verification" });
+
+      res.status(201).json({
+        msg: "Property added successfully",
+        propertyId: result.insertId,
+      });
     });
   });
 };
