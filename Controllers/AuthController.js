@@ -228,7 +228,7 @@ const requestPasswordReset = (req, res) => {
         async (err2) => {
           if (err2) return res.status(500).send("Database error");
 
-          const resetLink = `http://localhost:8000/auth/reset-password/${resetToken}`;
+          const resetLink = `http://localhost:${process.env.CLIENT_PORT || 5173}/auth/reset-password/${resetToken}`;
           await sendPasswordResetEmail(email, resetLink);
 
           return res
@@ -239,6 +239,7 @@ const requestPasswordReset = (req, res) => {
     },
   );
 };
+
 
 // ================= VERIFY RESET TOKEN =================
 const verifyResetToken = (req, res) => {
