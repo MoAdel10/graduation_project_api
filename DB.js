@@ -25,7 +25,6 @@ connection.connect((err) => {
 });
 
 function initializeDatabase() {
-  // 1️⃣ Create database if it doesn’t exist
   connection.query(
     `CREATE DATABASE IF NOT EXISTS \`${DATABASE_NAME}\`;`,
     (err) => {
@@ -35,7 +34,6 @@ function initializeDatabase() {
       }
       console.log(`📂 Database "${DATABASE_NAME}" is ready.`);
 
-      // 2️⃣ Switch to the database
       connection.changeUser({ database: DATABASE_NAME }, (err) => {
         if (err) {
           console.error("❌ Error selecting database:", err.message);
@@ -63,7 +61,7 @@ CREATE TABLE IF NOT EXISTS Users (
   otp_code VARCHAR(255),
   otp_expires_at DATETIME,
   reset_token VARCHAR(255),         
-  reset_expires_at DATETIME          
+  reset_expires_at DATETIME           
 );
 `;
 
@@ -85,6 +83,37 @@ CREATE TABLE IF NOT EXISTS Users (
     is_verified BOOLEAN DEFAULT FALSE,
     rate FLOAT,
     FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE
+  );
+`;
+
+  const rentingRequestTable = `
+  CREATE TABLE IF NOT EXISTS renting_request (
+    request_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    property_id INT NOT NULL,
+    renter_id CHAR(36) NOT NULL,
+    request_state ENUM('PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'PAYMENT_PENDING', 'PAID') DEFAULT 'PENDING',
+    total_price DECIMAL(10, 2) NOT NULL,
+    check_in_date DATE NOT NULL,
+    check_out_date DATE NOT NULL,
+    payment_id VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE,
+    FOREIGN KEY (renter_id) REFERENCES Users(user_id) ON DELETE CASCADE
+  );
+`;
+
+  const leaseTable = `
+  CREATE TABLE IF NOT EXISTS Lease (
+    lease_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    renter_id CHAR(36) NOT NULL,
+    owner_id CHAR(36) NOT NULL,
+    property_id INT NOT NULL,
+    total_price DECIMAL(10, 2) NOT NULL,
+    check_in_date DATE NOT NULL,
+    check_out_date DATE NOT NULL,
+    FOREIGN KEY (renter_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE
   );
 `;
 
@@ -122,9 +151,7 @@ CREATE TABLE IF NOT EXISTS Users (
     FOREIGN KEY (property_id) REFERENCES Property(property_id)
   );
 `;
-  const bcrypt = require("bcrypt");
 
-  // Admins table schema
   const adminsTable = `
   CREATE TABLE IF NOT EXISTS Admins (
     admin_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
@@ -135,7 +162,7 @@ CREATE TABLE IF NOT EXISTS Users (
   );
 `;
 
-const verificationRequestsTable = `
+  const verificationRequestsTable = `
   CREATE TABLE IF NOT EXISTS VerificationRequests (
     request_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     property_id INT NOT NULL, 
@@ -151,39 +178,29 @@ const verificationRequestsTable = `
   );
 `;
 
-  // Create Admins table
+  // --- Execution Logic ---
+
   connection.query(adminsTable, async (err) => {
-    if (err)
-      return console.error("❌ Error creating Admins table:", err.message);
+    if (err) return console.error("❌ Error creating Admins table:", err.message);
     console.log("✅ Admins table ready");
 
-    // Insert superadmin if none
     try {
       const superEmail = process.env.SUPERADMIN_EMAIL;
       const superPassword = process.env.SUPERADMIN_PASSWORD;
       const saltRounds = parseInt(process.env.SALT_ROUNDS || 10);
 
-      // Check if superadmin already exists
       connection.query(
         "SELECT * FROM Admins WHERE role = 'super_admin' LIMIT 1",
         async (err, results) => {
           if (err) return console.error("❌ Error checking superadmin:", err);
-
           if (results.length === 0) {
-            // Hash password
             const hashed = await bcrypt.hash(superPassword, saltRounds);
-
-            // Insert superadmin
             connection.query(
               "INSERT INTO Admins (email, password, role) VALUES (?, ?, 'super_admin')",
               [superEmail, hashed],
               (err) => {
-                if (err)
-                  return console.error("❌ Error inserting superadmin:", err);
-
-                console.log("🟢 Superadmin created automatically:");
-                console.log(`   Email: ${superEmail}`);
-                console.log(`   Password: ${superPassword}`);
+                if (err) return console.error("❌ Error inserting superadmin:", err);
+                console.log("🟢 Superadmin created automatically");
               },
             );
           } else {
@@ -197,65 +214,48 @@ const verificationRequestsTable = `
   });
 
   connection.query(usersTable, (err) => {
-    if (err)
-      return console.error("❌ Error creating Users table:", err.message);
+    if (err) return console.error("❌ Error creating Users table:", err.message);
     console.log("✅ Users table ready");
+
     const defaultUser = {
       first_name: "Default",
       second_name: "User",
       email: "default@example.com",
-      password: "password123",
+      password: "Password$123",
+      is_verified: true,
     };
 
+    // Simplified to INSERT IGNORE to prevent syntax issues with subqueries
     const insertUserQuery = `
-      INSERT INTO Users (first_name, second_name, email, password)
-      SELECT * FROM (SELECT ? AS first_name, ? AS second_name, ? AS email, ? AS password) AS tmp
-      WHERE NOT EXISTS (
-        SELECT email FROM Users WHERE email = ?
-      ) LIMIT 1;
+      INSERT IGNORE INTO Users (first_name, second_name, email, password, is_verified)
+      VALUES (?, ?, ?, ?, ?);
     `;
 
     connection.query(
       insertUserQuery,
-      [
-        defaultUser.first_name,
-        defaultUser.second_name,
-        defaultUser.email,
-        defaultUser.password,
-        defaultUser.email,
-      ],
+      [defaultUser.first_name, defaultUser.second_name, defaultUser.email, defaultUser.password, defaultUser.is_verified],
       (err) => {
-        if (err)
-          return console.error("❌ Error inserting default user:", err.message);
+        if (err) return console.error("❌ Error inserting default user:", err.message);
         console.log("👤 Default user ensured for frontend");
       },
     );
 
     connection.query(propertyTable, (err) => {
-      if (err)
-        return console.error("❌ Error creating Property table:", err.message);
+      if (err) return console.error("❌ Error creating Property table:", err.message);
       console.log("✅ Property table ready");
 
-      connection.query(rentalTable, (err) => {
-        if (err)
-          return console.error("❌ Error creating Rental table:", err.message);
-        console.log("✅ Rental table ready");
+      const dependentTables = [
+        { name: "Renting Request", sql: rentingRequestTable },
+        { name: "Lease", sql: leaseTable },
+        { name: "Rental", sql: rentalTable },
+        { name: "Rental Logs", sql: rentalLogsTable },
+        { name: "Verification Requests", sql: verificationRequestsTable }
+      ];
 
-        connection.query(rentalLogsTable, (err) => {
-          if (err)
-            return console.error(
-              "❌ Error creating Rental_logs table:",
-              err.message,
-            );
-          console.log("✅ Rental_logs table ready");
-          connection.query(verificationRequestsTable, (err) => {
-            if (err)
-              return console.error(
-                "❌ Error creating verification Requests table:",
-                err.message,
-              );
-            console.log("✅ verification Requests table ready");
-          });
+      dependentTables.forEach((table) => {
+        connection.query(table.sql, (err) => {
+          if (err) return console.error(`❌ Error creating ${table.name} table:`, err.message);
+          console.log(`✅ ${table.name} table ready`);
         });
       });
     });
