@@ -10,29 +10,63 @@ const addProperty = (req, res) => {
     return res.status(400).json({ msg: "all fields are required" });
   }
 
-  const {
-    propertyName,
-    propertyDesc,
-    location,
-    pricePerDay,
-    size,
-    bedroomsNumber,
-    bedsNumber,
-    bathroomsNumber,
-  } = req.body;
+const {
+  propertyName,
+  propertyDesc,
+  location,
 
-  if (
-    !propertyName ||
-    !propertyDesc ||
-    !location ||
-    !pricePerDay ||
-    !size ||
-    !bedroomsNumber ||
-    !bedsNumber ||
-    !bathroomsNumber
-  ) {
-    return res.status(400).json({ msg: "all fields are required" });
+  // old
+  pricePerDay,
+
+  // new
+  pricingUnit,
+  priceValue,
+
+  size,
+  bedroomsNumber,
+  bedsNumber,
+  bathroomsNumber,
+} = req.body;
+
+
+if (
+  !propertyName ||
+  !propertyDesc ||
+  !location ||
+  !size ||
+  !bedroomsNumber ||
+  !bedsNumber ||
+  !bathroomsNumber
+) {
+  return res.status(400).json({ msg: "all fields are required" });
+}
+
+  // Pricing validation
+  const unit = (pricingUnit || "DAY").toUpperCase();
+  const allowedUnits = ["DAY", "MONTH", "YEAR"];
+  if (!allowedUnits.includes(unit)) {
+    return res.status(400).json({ msg: "pricingUnit must be DAY, MONTH, or YEAR" });
   }
+
+  // Decide the owner-facing price value
+  const rawValue = priceValue ?? pricePerDay;
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return res.status(400).json({ msg: "priceValue (or pricePerDay) is required" });
+  }
+
+  const value = validateNumber(rawValue);
+  if (!value || value <= 0) {
+    return res.status(400).json({ msg: "price must be a valid number > 0" });
+  }
+
+  // Normalize to daily pricing (policy: month=30 days, year=365 days)
+  let pricePerDayNormalized = value;
+  if (unit === "MONTH") pricePerDayNormalized = value / 30;
+  if (unit === "YEAR") pricePerDayNormalized = value / 365;
+
+  // Keep 2 decimals
+  pricePerDayNormalized = Number(pricePerDayNormalized.toFixed(2));
+
 
   const propertyImages =
     req.files["images"]?.map((file) => `uploads/property/${file.filename}`) ||
@@ -54,36 +88,46 @@ const addProperty = (req, res) => {
       .json({ msg: "Please upload property and ownership images" });
   }
 
-  const sql = `
-    INSERT INTO Property (
-      owner_id,
-      property_name,
-      property_desc,
-      location,
-      price_per_day,
-      size,
-      bedrooms_no,
-      beds_no,
-      bathrooms_no,
-      images,
-      ownership_proofs
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
-
-  const values = [
-    req.user.userId,
-    propertyName,
-    propertyDesc,
+const sql = `
+  INSERT INTO Property (
+    owner_id,
+    property_name,
+    property_desc,
     location,
-    validateNumber(pricePerDay),
+
+    pricing_unit,
+    price_value,
+    price_per_day,
+
     size,
-    validateNumber(bedroomsNumber),
-    validateNumber(bedsNumber),
-    validateNumber(bathroomsNumber),
-    JSON.stringify(propertyImages), // Stored as a JSON string
-    JSON.stringify(proofImages), // Stored as a JSON string
-  ];
+    bedrooms_no,
+    beds_no,
+    bathrooms_no,
+    images,
+    ownership_proofs
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
+
+
+const values = [
+  req.user.userId,
+  propertyName,
+  propertyDesc,
+  location,
+
+  unit,
+  value,
+  pricePerDayNormalized,
+
+  size,
+  validateNumber(bedroomsNumber),
+  validateNumber(bedsNumber),
+  validateNumber(bathroomsNumber),
+  JSON.stringify(propertyImages),
+  JSON.stringify(proofImages),
+];
+
 
   connection.query(sql, values, (err, result) => {
     if (err) {

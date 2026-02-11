@@ -69,10 +69,16 @@ CREATE TABLE IF NOT EXISTS Users (
   CREATE TABLE IF NOT EXISTS Property (
     property_id INT AUTO_INCREMENT PRIMARY KEY,
     owner_id CHAR(36),
+
     property_name VARCHAR(255),
     property_desc TEXT,
     location VARCHAR(255),
-    price_per_day DECIMAL(10,2),
+
+    -- Pricing (NEW)
+    pricing_unit ENUM('DAY','MONTH','YEAR') NOT NULL DEFAULT 'DAY',
+    price_value DECIMAL(10,2) NOT NULL,      -- owner chosen value (per unit)
+    price_per_day DECIMAL(10,2) NOT NULL,    -- normalized daily price (used for all calculations)
+
     size VARCHAR(50),
     bedrooms_no INT,
     beds_no INT,
@@ -82,9 +88,11 @@ CREATE TABLE IF NOT EXISTS Users (
     is_available BOOLEAN DEFAULT TRUE,
     is_verified BOOLEAN DEFAULT FALSE,
     rate FLOAT,
+
     FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE
   );
 `;
+
 
   const rentingRequestTable = `
   CREATE TABLE IF NOT EXISTS renting_request (
