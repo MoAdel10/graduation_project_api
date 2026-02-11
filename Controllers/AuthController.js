@@ -137,7 +137,6 @@ const requestOTP = (req, res) => {
       if (err) {
         console.error("❌ Error saving OTP:", err);
         return res.status(500).json({ msg: "Internal server error" });
-
       } else {
         // Send OTP via email
         try {
@@ -240,7 +239,6 @@ const requestPasswordReset = (req, res) => {
   );
 };
 
-
 // ================= VERIFY RESET TOKEN =================
 const verifyResetToken = (req, res) => {
   const { token } = req.params;
@@ -330,7 +328,11 @@ const Login = async (req, res) => {
       }
 
       const token = jwt.sign(
-        { userId: user.user_id, email: user.email,is_verified:user.is_verified },
+        {
+          userId: user.user_id,
+          email: user.email,
+          is_verified: user.is_verified,
+        },
         process.env.JWT_SECRET_KEY,
         { expiresIn: "3h" },
       );
@@ -470,5 +472,5 @@ module.exports = {
   requestPasswordReset,
   verifyResetToken,
   resetPassword,
-  requestOTP
+  requestOTP,
 };

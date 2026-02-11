@@ -221,7 +221,7 @@ CREATE TABLE IF NOT EXISTS Users (
       first_name: "Default",
       second_name: "User",
       email: "default@example.com",
-      password: "Password$123",
+      password: "$2b$10$YAzxENe2MbnVNPHp0lchpuaHF4kHG9ST3SKMT/TORQu1ugukIsObq", //Password$123
       is_verified: true,
     };
 
