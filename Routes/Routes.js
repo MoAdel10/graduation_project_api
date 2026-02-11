@@ -3,7 +3,7 @@ const propertyRoute = require("./PropertyRoutes")
 const favoriteRoute = require("./FavoriteRoute")
 const adminRoute = require("./AdminRoutes")
 const owenrShiproutes = require("./OwnerShipRoutes")
-const rentRequestRoutes = require("./RentRequestRoutes") // a new route 
+const rentRequestRoutes = require("./RentRequestRoute") 
 
 function mountRoutes(app){
     app.use("/",authRoute)
@@ -12,7 +12,6 @@ function mountRoutes(app){
     app.use("/",adminRoute)
     app.use("/",owenrShiproutes)
     app.use("/", rentRequestRoutes);
-
     console.log("✅ Routes Mounted");
 }
 

@@ -35,8 +35,8 @@ const getRentRequests = (req, res) => {
         received,
       },
     });
-  }); 
-}; 
+  });
+};
 
 // Helper: validate YYYY-MM-DD dates + basic ordering
 function validateDateRange(checkIn, checkOut) {
@@ -86,6 +86,27 @@ function hasOverlap(propertyId, checkIn, checkOut, excludeRequestId, cb) {
   );
 }
 
+function hasDuplicateRequest(renterId, propertyId, checkIn, checkOut, cb) {
+  const sql = `
+    SELECT 1
+    FROM renting_request
+    WHERE renter_id = ?
+      AND property_id = ?
+      AND request_state IN ('PENDING', 'ACCEPTED', 'PAID')
+      AND ? < check_out_date
+      AND ? > check_in_date
+    LIMIT 1
+  `;
+  connection.query(
+    sql,
+    [renterId, propertyId, checkIn, checkOut],
+    (err, rows) => {
+      if (err) return cb(err);
+      cb(null, rows.length > 0);
+    },
+  );
+}
+
 /**
  * POST /rent-requests
  * Who: Renter
@@ -94,18 +115,21 @@ const createRentRequest = (req, res) => {
   const renterId = req.user.userId;
   const { property_id, check_in_date, check_out_date } = req.body;
 
+  // 0) Basic validation
   if (!property_id || !check_in_date || !check_out_date) {
-    return res
-      .status(400)
-      .json({ msg: "property_id, check_in_date, check_out_date are required" });
+    return res.status(400).json({
+      msg: "property_id, check_in_date, check_out_date are required",
+    });
   }
 
   const dateCheck = validateDateRange(check_in_date, check_out_date);
-  if (!dateCheck.ok) return res.status(400).json({ msg: dateCheck.msg });
+  if (!dateCheck.ok) {
+    return res.status(400).json({ msg: dateCheck.msg });
+  }
 
-  // 1) property exists + owner + price + is_available
+  // 1) Property lookup
   const propSql = `
-    SELECT property_id, owner_id, price_per_day, is_available
+    SELECT property_id, owner_id, price_per_day, is_available,is_verified
     FROM Property
     WHERE property_id = ?
     LIMIT 1
@@ -116,24 +140,34 @@ const createRentRequest = (req, res) => {
       return res.status(500).json({ msg: "Database error" });
     }
 
-    if (props.length === 0)
+    if (props.length === 0) {
       return res.status(404).json({ msg: "Property not found" });
+    }
 
     const property = props[0];
 
     // renter != owner
     if (property.owner_id === renterId) {
-      return res.status(400).json({ msg: "You can't rent your own property" });
+      return res.status(400).json({
+        msg: "You can't rent your own property",
+      });
     }
 
-    // optional: must be listed/available (NOT date booking)
+    // must be listed
     if (property.is_available === 0) {
-      return res
-        .status(409)
-        .json({ msg: "Property is not available for renting right now" });
+      return res.status(409).json({
+        msg: "Property is not available for renting right now",
+      });
+    }
+    
+    // must be verified by admin    
+    if (property.is_verified == false) {
+      return res.status(400).json({
+        msg: "Property is not verified",
+      });
     }
 
-    // 2) date-aware overlap check against ACCEPTED/PAID
+    // 2) Property availability check
     hasOverlap(
       property.property_id,
       check_in_date,
@@ -144,68 +178,94 @@ const createRentRequest = (req, res) => {
           console.error("❌ DB error (overlap check):", err);
           return res.status(500).json({ msg: "Database error" });
         }
+
         if (overlap) {
-          return res
-            .status(409)
-            .json({ msg: "Property not available for the selected dates" });
+          return res.status(409).json({
+            msg: "Property already reserved for these dates",
+          });
         }
 
-        // 3) compute total_price = days * price_per_day
-        const daysSql = `SELECT DATEDIFF(?, ?) AS days`;
-        connection.query(
-          daysSql,
-          [check_out_date, check_in_date],
-          (err, diffRows) => {
+        // 3) IDEMPOTENCY CHECK (duplicate renter request)
+        hasDuplicateRequest(
+          renterId,
+          property.property_id,
+          check_in_date,
+          check_out_date,
+          (err, exists) => {
             if (err) {
-              console.error("❌ DB error (datediff):", err);
+              console.error("❌ DB error (duplicate request):", err);
               return res.status(500).json({ msg: "Database error" });
             }
 
-            const days = diffRows[0]?.days;
-            if (!days || days <= 0) {
-              return res.status(400).json({ msg: "Invalid date range" });
-            }
-
-            const pricePerDay = Number(property.price_per_day);
-            if (!pricePerDay || pricePerDay <= 0) {
-              return res
-                .status(400)
-                .json({ msg: "Property price_per_day is invalid" });
-            }
-
-            const totalPrice = Number((pricePerDay * days).toFixed(2));
-
-            // 4) insert rent request
-            const requestId = crypto.randomUUID();
-
-            const insertSql = `
-          INSERT INTO renting_request
-            (request_id, property_id, renter_id, request_state, total_price, check_in_date, check_out_date)
-          VALUES
-            (?, ?, ?, 'PENDING', ?, ?, ?)
-        `;
-            const values = [
-              requestId,
-              property.property_id,
-              renterId,
-              totalPrice,
-              check_in_date,
-              check_out_date,
-            ];
-
-            connection.query(insertSql, values, (err) => {
-              if (err) {
-                console.error("❌ DB error (insert renting_request):", err);
-                return res.status(500).json({ msg: "Database error" });
-              }
-
-              return res.status(201).json({
-                msg: "Rent request created",
-                request_id: requestId,
-                request_state: "PENDING",
-                total_price: totalPrice,
+            if (exists) {
+              return res.status(409).json({
+                msg: "You already have an active rent request for this property and date range",
               });
-            });
+            }
+
+            // 4) Calculate days
+            const daysSql = `SELECT DATEDIFF(?, ?) AS days`;
+            connection.query(
+              daysSql,
+              [check_out_date, check_in_date],
+              (err, diffRows) => {
+                if (err) {
+                  console.error("❌ DB error (datediff):", err);
+                  return res.status(500).json({ msg: "Database error" });
+                }
+
+                const days = diffRows[0]?.days;
+                if (!days || days <= 0) {
+                  return res.status(400).json({ msg: "Invalid date range" });
+                }
+
+                const pricePerDay = Number(property.price_per_day);
+                if (!pricePerDay || pricePerDay <= 0) {
+                  return res.status(400).json({
+                    msg: "Property price_per_day is invalid",
+                  });
+                }
+
+                const totalPrice = Number((pricePerDay * days).toFixed(2));
+
+                // 5) Insert rent request
+                const requestId = crypto.randomUUID();
+                const insertSql = `
+                  INSERT INTO renting_request
+                    (request_id, property_id, renter_id, request_state, total_price, check_in_date, check_out_date)
+                  VALUES
+                    (?, ?, ?, 'PENDING', ?, ?, ?)
+                `;
+
+                connection.query(
+                  insertSql,
+                  [
+                    requestId,
+                    property.property_id,
+                    renterId,
+                    totalPrice,
+                    check_in_date,
+                    check_out_date,
+                  ],
+                  (err) => {
+                    if (err) {
+                      console.error(
+                        "❌ DB error (insert renting_request):",
+                        err,
+                      );
+                      return res.status(500).json({ msg: "Database error" });
+                    }
+
+                    return res.status(201).json({
+                      msg: "Rent request created",
+                      request_id: requestId,
+                      request_state: "PENDING",
+                      total_price: totalPrice,
+                    });
+                  },
+                );
+              },
+            );
           },
         );
       },
@@ -273,11 +333,9 @@ const acceptRentRequest = (req, res) => {
 
     // must be pending
     if (rr.request_state !== "PENDING") {
-      return res
-        .status(409)
-        .json({
-          msg: `Request can't be accepted from state ${rr.request_state}`,
-        });
+      return res.status(409).json({
+        msg: `Request can't be accepted from state ${rr.request_state}`,
+      });
     }
 
     // (recommended) re-check overlap before accept to avoid double-booking
@@ -310,11 +368,9 @@ const acceptRentRequest = (req, res) => {
           }
 
           if (result.affectedRows === 0) {
-            return res
-              .status(409)
-              .json({
-                msg: "Request was already updated (not PENDING anymore)",
-              });
+            return res.status(409).json({
+              msg: "Request was already updated (not PENDING anymore)",
+            });
           }
 
           return res
@@ -386,11 +442,9 @@ const cancelRentRequest = (req, res) => {
     }
 
     if (result.affectedRows === 0) {
-      return res
-        .status(404)
-        .json({
-          msg: "Request not found, not yours, or can't be cancelled now",
-        });
+      return res.status(404).json({
+        msg: "Request not found, not yours, or can't be cancelled now",
+      });
     }
 
     return res
