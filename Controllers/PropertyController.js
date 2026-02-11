@@ -457,6 +457,44 @@ const deleteProperty = (req, res) => {
   );
 };
 
+
+const getMyProperty = (req, res) => {
+  const userId = req.user.userId;
+
+  const sql = `
+    SELECT 
+      property_id, 
+      property_name, 
+      location, 
+      pricing_unit, 
+      price_value, 
+      price_per_day, 
+      is_available, 
+      is_verified, 
+      images,
+      rate
+    FROM Property 
+    WHERE owner_id = ?
+    ORDER BY property_id DESC
+  `;
+
+  connection.query(sql, [userId], (err, results) => {
+    if (err) {
+      console.error("❌ DB Error in getMyProperty:", err);
+      return res.status(500).json({ msg: "Database error occurred" });
+    }
+
+    const formattedResults = results.map(prop => ({
+      ...prop,
+    
+      images: typeof prop.images === 'string' ? JSON.parse(prop.images) : prop.images,
+      is_available: !!prop.is_available,
+      is_verified: !!prop.is_verified
+    }));
+
+    res.status(200).json(formattedResults);
+  });
+};
 module.exports = {
   addProperty,
   getProperties,
@@ -464,4 +502,5 @@ module.exports = {
   editPropertyInfo,
   editPropertyImages,
   deleteProperty,
+  getMyProperty
 };
