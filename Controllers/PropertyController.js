@@ -26,6 +26,8 @@ const {
   bedroomsNumber,
   bedsNumber,
   bathroomsNumber,
+  is_furnished,
+  property_type,
 } = req.body;
 
 
@@ -104,9 +106,11 @@ const sql = `
     beds_no,
     bathrooms_no,
     images,
-    ownership_proofs
+    ownership_proofs,
+    is_furnished,
+    property_type
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?)
 `;
 
 
@@ -126,6 +130,8 @@ const values = [
   validateNumber(bathroomsNumber),
   JSON.stringify(propertyImages),
   JSON.stringify(proofImages),
+  is_furnished==true?1:0,
+  property_type
 ];
 
 

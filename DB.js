@@ -73,6 +73,8 @@ CREATE TABLE IF NOT EXISTS Users (
     property_name VARCHAR(255),
     property_desc TEXT,
     location VARCHAR(255),
+    latitude DECIMAL(10, 8),
+    longitude DECIMAL(11, 8),
 
     -- Pricing (NEW)
     pricing_unit ENUM('DAY','MONTH','YEAR') NOT NULL DEFAULT 'DAY',
@@ -87,6 +89,8 @@ CREATE TABLE IF NOT EXISTS Users (
     ownership_proofs JSON,
     is_available BOOLEAN DEFAULT TRUE,
     is_verified BOOLEAN DEFAULT FALSE,
+    is_furnished BOOLEAN DEFAULT FALSE,
+    property_type ENUM('for_sale','for_rent') DEFAULT 'for_rent',
     rate FLOAT,
 
     FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE
