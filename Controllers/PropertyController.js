@@ -28,6 +28,9 @@ const {
   bathroomsNumber,
   is_furnished,
   property_type,
+  latitude,
+  longitude,
+  
 } = req.body;
 
 
@@ -108,7 +111,9 @@ const sql = `
     images,
     ownership_proofs,
     is_furnished,
-    property_type
+    property_type,
+    latitude,
+    longitude
   )
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?,?)
 `;
@@ -131,7 +136,9 @@ const values = [
   JSON.stringify(propertyImages),
   JSON.stringify(proofImages),
   is_furnished==true?1:0,
-  property_type
+  property_type,
+  latitude,
+  longitude
 ];
 
 
@@ -156,7 +163,7 @@ const values = [
 };
 
 const getProperties = (req, res) => {
-  let { location, minPrice, maxPrice, minSize, maxSize, bedrooms, bathrooms } =
+  let { location, minPrice, maxPrice, minSize, maxSize, bedrooms, bathrooms,longitude,latitude } =
     req.query;
   // http://localhost:8000/property?minPrice=20 methal 3shan barghout maysara54  (ma fuck barghout ya 3am (sarhan))
 
@@ -168,6 +175,14 @@ const getProperties = (req, res) => {
   if (location) {
     sql += " AND location LIKE ?";
     params.push(`%${location}%`);
+  }
+  if (longitude) {
+    sql += " AND longitude = ?";
+    params.push(`%${longitude}%`);
+  }
+  if (latitude) {
+    sql += " AND latitude = ?";
+    params.push(`%${latitude}%`);
   }
   if (minPrice) {
     sql += " AND price_per_day >= ?";
@@ -258,6 +273,8 @@ const editPropertyInfo = (req, res) => {
     bedroomsNumber,
     bedsNumber,
     bathroomsNumber,
+    latitude,
+    longitude,
   } = req.body;
 
   // Verify ownership
@@ -282,7 +299,9 @@ const editPropertyInfo = (req, res) => {
           size = ?,
           bedrooms_no = ?,
           beds_no = ?,
-          bathrooms_no = ?
+          bathrooms_no = ?,
+          latitude = ?,
+          longitude = ?,
         WHERE property_id = ?
       `;
 
@@ -295,6 +314,8 @@ const editPropertyInfo = (req, res) => {
         bedroomsNumber || property.bedrooms_no,
         bedsNumber || property.beds_no,
         bathroomsNumber || property.bathrooms_no,
+        latitude || property.latitude,
+        longitude || property.longitude,
         id,
       ];
 
@@ -471,7 +492,9 @@ const getMyProperty = (req, res) => {
     SELECT 
       property_id, 
       property_name, 
-      location, 
+      location,
+      longitude,
+      latitude,
       pricing_unit, 
       price_value, 
       price_per_day, 
