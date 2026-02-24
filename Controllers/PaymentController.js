@@ -27,37 +27,41 @@ const GetPaymentLink = async (req, res) => {
 
   connection.query(sql, [request_id], async (err, result) => {
     if (err) return res.status(500).json({ msg: "Database error" });
-    if (result.length === 0)
-      return res.status(404).json({ msg: "Request not found" });
+    if (result.length === 0) return res.status(404).json({ msg: "Request not found" });
 
     const rent_request = result[0];
 
     try {
       const customer = {
         email: rent_request.email,
-        reference: rent_request.request_id,
+        reference: String(rent_request.request_id), 
       };
 
       const sessionPayload = kashier.createPaymentSession(
         parseFloat(rent_request.total_price),
         customer,
-        (currency = "EGP"),
-        (order_id = rent_request.request_id),
+        "EGP", 
+        rent_request.request_id
       );
 
       const kashierResponse = await kashier.sendPaymentRequest(sessionPayload);
 
-      // 3. Return the redirect URL to your frontend
-      if (kashierResponse.status == "CREATED" || kashierResponse.response) {
-        connection.query(
-          "UPDATE renting_request set request_state = 'PAYMENT_PENDING' whree request_id = ?",
-          rent_request.request_id,
-          (err, result) => {
-            return res.status(200).json({
-              url: kashierResponse.sessionUrl,
-            });
-          },
-        );
+      
+      if (kashierResponse && (kashierResponse.status === "CREATED" || kashierResponse.sessionUrl)) {
+        
+    
+        const updateSql = "UPDATE renting_request SET request_state = 'PAYMENT_PENDING' WHERE request_id = ?";
+        
+        connection.query(updateSql, [rent_request.request_id], (updateErr) => {
+          if (updateErr) {
+            console.error("❌ Update Error: ", updateErr);
+            return res.status(500).json({ msg: "Failed to update request state" });
+          }
+
+          return res.status(200).json({
+            url: kashierResponse.sessionUrl,
+          });
+        });
       } else {
         throw new Error("Kashier session creation failed");
       }
@@ -69,17 +73,17 @@ const GetPaymentLink = async (req, res) => {
 };
 
 const KashierWebhook = (req, res) => {
-  // 1. Immediately acknowledge with 200 OK (Kashier's requirement)
+
   res.status(200).send("OK");
 
   const { data, event } = req.body;
-  if (event !== "pay") return; // We only care about successful payments
+  if (event !== "pay") return; 
 
-  // 2. Verify Signature
+ 
   const signatureKeys = data.signatureKeys.sort();
   const objectSignaturePayload = _.pick(data, signatureKeys);
 
-  // Values must be URL encoded during stringify
+  
   const signaturePayload = queryString.stringify(objectSignaturePayload);
 
   const generatedSignature = crypto
@@ -94,9 +98,9 @@ const KashierWebhook = (req, res) => {
     return;
   }
 
-  // 3. Update Database if Payment is Successful
+  
   if (data.status === "SUCCESS") {
-    const requestId = data.merchantOrderId; // This is the ID we passed in 'reference' earlier
+    const requestId = data.merchantOrderId; // ID  passed in reference earlier
 
     const updateSql = `
             UPDATE renting_request 
@@ -112,9 +116,6 @@ const KashierWebhook = (req, res) => {
         else console.log(`✅ Request ${requestId} marked as PAID.`);
       },
     );
-
-    // Optional: Insert into your PaymentIntents table
-    // INSERT INTO PaymentIntents (user_id, property_id, payment_type, value...)
   }
 };
 

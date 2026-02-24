@@ -292,7 +292,6 @@ CREATE TABLE IF NOT EXISTS Users (
         { name: "Verification Requests", sql: verificationRequestsTable },
         { name: "Payment Intents", sql: paymentIntentsTable },
       ];
-
       dependentTables.forEach((table) => {
         connection.query(table.sql, (err) => {
           if (err)
