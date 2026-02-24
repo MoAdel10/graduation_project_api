@@ -1,6 +1,7 @@
 const mysql = require("mysql2");
 require("dotenv").config();
 const bcrypt = require("bcrypt");
+const { name } = require("ejs");
 
 const DATABASE_NAME = process.env.DB_NAME || "RealEstateDB";
 
@@ -60,7 +61,8 @@ CREATE TABLE IF NOT EXISTS Users (
   is_verified BOOLEAN DEFAULT FALSE,
   otp_code VARCHAR(255),
   otp_expires_at DATETIME,
-  reset_token VARCHAR(255),         
+  reset_token VARCHAR(255),    
+  balance INT,     
   reset_expires_at DATETIME           
 );
 `;
@@ -96,7 +98,6 @@ CREATE TABLE IF NOT EXISTS Users (
     FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE
   );
 `;
-
 
   const rentingRequestTable = `
   CREATE TABLE IF NOT EXISTS renting_request (
@@ -190,10 +191,27 @@ CREATE TABLE IF NOT EXISTS Users (
   );
 `;
 
+  const paymentIntentsTable = `
+  CREATE TABLE IF NOT EXISTS PaymentIntents (
+    payment_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    user_id CHAR(36) NOT NULL,
+    property_id INT NOT NULL,
+    payment_type ENUM('rent', 'withdraw', 'refund') NOT NULL,
+    value DECIMAL(10, 2) NOT NULL,
+    payment_method ENUM('card', 'wallet') NOT NULL,
+    status ENUM('pending', 'succeeded', 'failed', 'canceled') DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE
+  );
+`;
+
   // --- Execution Logic ---
 
   connection.query(adminsTable, async (err) => {
-    if (err) return console.error("❌ Error creating Admins table:", err.message);
+    if (err)
+      return console.error("❌ Error creating Admins table:", err.message);
     console.log("✅ Admins table ready");
 
     try {
@@ -211,7 +229,8 @@ CREATE TABLE IF NOT EXISTS Users (
               "INSERT INTO Admins (email, password, role) VALUES (?, ?, 'super_admin')",
               [superEmail, hashed],
               (err) => {
-                if (err) return console.error("❌ Error inserting superadmin:", err);
+                if (err)
+                  return console.error("❌ Error inserting superadmin:", err);
                 console.log("🟢 Superadmin created automatically");
               },
             );
@@ -226,7 +245,8 @@ CREATE TABLE IF NOT EXISTS Users (
   });
 
   connection.query(usersTable, (err) => {
-    if (err) return console.error("❌ Error creating Users table:", err.message);
+    if (err)
+      return console.error("❌ Error creating Users table:", err.message);
     console.log("✅ Users table ready");
 
     const defaultUser = {
@@ -245,15 +265,23 @@ CREATE TABLE IF NOT EXISTS Users (
 
     connection.query(
       insertUserQuery,
-      [defaultUser.first_name, defaultUser.second_name, defaultUser.email, defaultUser.password, defaultUser.is_verified],
+      [
+        defaultUser.first_name,
+        defaultUser.second_name,
+        defaultUser.email,
+        defaultUser.password,
+        defaultUser.is_verified,
+      ],
       (err) => {
-        if (err) return console.error("❌ Error inserting default user:", err.message);
+        if (err)
+          return console.error("❌ Error inserting default user:", err.message);
         console.log("👤 Default user ensured for frontend");
       },
     );
 
     connection.query(propertyTable, (err) => {
-      if (err) return console.error("❌ Error creating Property table:", err.message);
+      if (err)
+        return console.error("❌ Error creating Property table:", err.message);
       console.log("✅ Property table ready");
 
       const dependentTables = [
@@ -261,12 +289,17 @@ CREATE TABLE IF NOT EXISTS Users (
         { name: "Lease", sql: leaseTable },
         { name: "Rental", sql: rentalTable },
         { name: "Rental Logs", sql: rentalLogsTable },
-        { name: "Verification Requests", sql: verificationRequestsTable }
+        { name: "Verification Requests", sql: verificationRequestsTable },
+        { name: "Payment Intents", sql: paymentIntentsTable },
       ];
 
       dependentTables.forEach((table) => {
         connection.query(table.sql, (err) => {
-          if (err) return console.error(`❌ Error creating ${table.name} table:`, err.message);
+          if (err)
+            return console.error(
+              `❌ Error creating ${table.name} table:`,
+              err.message,
+            );
           console.log(`✅ ${table.name} table ready`);
         });
       });

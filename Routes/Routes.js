@@ -4,6 +4,7 @@ const favoriteRoute = require("./FavoriteRoute")
 const adminRoute = require("./AdminRoutes")
 const owenrShiproutes = require("./OwnerShipRoutes")
 const rentRequestRoutes = require("./RentRequestRoute") 
+const paymentRoutes = require("./PaymentRoutes")
 
 function mountRoutes(app){
     app.use("/",authRoute)
@@ -12,8 +13,11 @@ function mountRoutes(app){
     app.use("/",adminRoute)
     app.use("/",owenrShiproutes)
     app.use("/", rentRequestRoutes);
+    app.use("/",paymentRoutes)
     console.log("✅ Routes Mounted");
 }
+
+
 
 
 module.exports = mountRoutes
