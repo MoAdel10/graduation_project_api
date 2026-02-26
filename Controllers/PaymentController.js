@@ -119,4 +119,118 @@ const KashierWebhook = (req, res) => {
   }
 };
 
-module.exports = { GetPaymentLink, KashierWebhook };
+
+const refundPayment = async (req, res) => {
+  const { request_id, reason } = req.body;
+
+  if (!request_id) {
+    return res.status(400).json({ msg: "Request ID is required" });
+  }
+
+  const getRequestSql = "SELECT * FROM renting_request WHERE request_id = ?";
+  connection.query(getRequestSql, [request_id], async (err, results) => {
+    if (err) return res.status(500).json({ msg: "Database error" });
+    if (results.length === 0) return res.status(404).json({ msg: "Renting request not found" });
+
+    const rentRequest = results[0];
+
+    if (rentRequest.request_state !== 'PAID') {
+      return res.status(400).json({ msg: "Refunds are only possible for paid requests." });
+    }
+    
+    if (!rentRequest.payment_id) {
+        return res.status(400).json({ msg: "Payment ID is missing, cannot process refund." });
+    }
+
+    const kashier = new KashierPaymentService(
+      process.env.PAYMENT_SEC_KEY,
+      process.env.PAYMENT_API_KEY
+    );
+
+    try {
+      const refundResponse = await kashier.sendRefundRequest(
+        rentRequest.total_price,
+        rentRequest.payment_id,
+        reason || "Owner requested refund"
+      );
+
+      if (refundResponse && refundResponse.status === "SUCCESS") {
+        const updateRequestSql = "UPDATE renting_request SET request_state = 'REFUNDED' WHERE request_id = ?";
+        connection.query(updateRequestSql, [request_id]);
+
+        const paymentIntentId = crypto.randomUUID();
+        const insertPaymentIntentSql = `
+          INSERT INTO PaymentIntents (payment_id, user_id, property_id, payment_type, value, payment_method, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `;
+        connection.query(insertPaymentIntentSql, [
+          paymentIntentId,
+          rentRequest.renter_id,
+          rentRequest.property_id,
+          'refund',
+          rentRequest.total_price,
+          'card', // Assuming card, might need to be stored in rent_request
+          'succeeded'
+        ]);
+
+        return res.status(200).json({ msg: "Refund processed successfully." });
+      } else {
+        return res.status(500).json({ msg: "Refund failed at payment gateway.", details: refundResponse.message });
+      }
+    } catch (error) {
+      console.error("Refund Error: ", error);
+      return res.status(500).json({ msg: "An unexpected error occurred during the refund process." });
+    }
+  });
+};
+
+const requestWithdrawal = async (req, res) => {
+    const { amount, method, receiverData } = req.body;
+    const userId = req.user.id;
+
+    if (!amount || !method || !receiverData) {
+        return res.status(400).json({ msg: "Amount, method, and receiver data are required." });
+    }
+
+    connection.query("SELECT balance FROM Users WHERE user_id = ?", [userId], (err, results) => {
+        if (err) return res.status(500).json({ msg: "Database error checking balance." });
+        if (results.length === 0) return res.status(404).json({ msg: "User not found." });
+
+        const balance = results[0].balance;
+        if (balance < amount) {
+            return res.status(400).json({ msg: "Insufficient balance." });
+        }
+
+        const paymentIntentId = crypto.randomUUID();
+        const intentSql = `
+            INSERT INTO PaymentIntents (payment_id, user_id, payment_type, value, payment_method, status)
+            VALUES (?, ?, 'withdraw', ?, ?, 'pending')
+        `;
+        connection.query(intentSql, [paymentIntentId, userId, amount, method], async (err, intentResult) => {
+            if (err) return res.status(500).json({ msg: "Database error creating payment intent." });
+
+            const kashier = new KashierPaymentService(process.env.PAYMENT_SEC_KEY);
+
+            try {
+                const withdrawalResponse = await kashier.sendMoney(amount, method, receiverData);
+
+                if (withdrawalResponse && withdrawalResponse.status === "SUCCESS") {
+                    const newBalance = balance - amount;
+                    connection.query("UPDATE Users SET balance = ? WHERE user_id = ?", [newBalance, userId]);
+                    connection.query("UPDATE PaymentIntents SET status = 'succeeded' WHERE payment_id = ?", [paymentIntentId]);
+                    return res.status(200).json({ msg: "Withdrawal successful." });
+                } else {
+                    connection.query("UPDATE PaymentIntents SET status = 'failed' WHERE payment_id = ?", [paymentIntentId]);
+                    return res.status(500).json({ msg: "Withdrawal failed at payment gateway.", details: withdrawalResponse.message });
+                }
+            } catch (error) {
+                console.error("Withdrawal Error: ", error);
+                connection.query("UPDATE PaymentIntents SET status = 'failed' WHERE payment_id = ?", [paymentIntentId]);
+                return res.status(500).json({ msg: "An unexpected error occurred during the withdrawal process." });
+            }
+        });
+    });
+};
+
+module.exports = { GetPaymentLink, KashierWebhook, refundPayment, requestWithdrawal };
+

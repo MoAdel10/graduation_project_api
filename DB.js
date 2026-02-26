@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS Users (
   otp_code VARCHAR(255),
   otp_expires_at DATETIME,
   reset_token VARCHAR(255),    
-  balance INT,     
+  balance DECIMAL(10, 2) NOT NULL DEFAULT 0.00,     
   reset_expires_at DATETIME           
 );
 `;
