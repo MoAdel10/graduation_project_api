@@ -278,11 +278,14 @@ const editPropertyInfo = (req, res) => {
   } = req.body;
 
   // Verify ownership
+  
   connection.query(
     "SELECT * FROM Property WHERE property_id = ?",
     [id],
     (err, results) => {
-      if (err) return res.status(500).json({ msg: "Database error" });
+      if (err) {
+        return res.status(500).json({ msg: "Database error"});
+      }
       if (results.length === 0)
         return res.status(404).json({ msg: "Property not found" });
 
@@ -301,7 +304,7 @@ const editPropertyInfo = (req, res) => {
           beds_no = ?,
           bathrooms_no = ?,
           latitude = ?,
-          longitude = ?,
+          longitude = ?
         WHERE property_id = ?
       `;
 
@@ -320,7 +323,7 @@ const editPropertyInfo = (req, res) => {
       ];
 
       connection.query(sql, values, (err) => {
-        if (err) return res.status(500).json({ msg: "Database error" });
+        if (err) return res.status(500).json({ msg: "Database error" ,err});
         triggerReverification(connection, id, userId, (err) => {
           if (err)
             return res
