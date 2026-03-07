@@ -207,6 +207,24 @@ CREATE TABLE IF NOT EXISTS Users (
   );
 `;
 
+  const notificationTable = `
+  CREATE TABLE IF NOT EXISTS Notifications (
+    notification_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    sender CHAR(36) NOT NULL,    -- Can be a User ID or a 'SYSTEM' identifier
+    receiver CHAR(36) NOT NULL,  -- The target User ID
+    event_type VARCHAR(50) NOT NULL, --  'PAYMENT_SUCCESS', 'RENT_REQUEST'
+    notification_title VARCHAR(255) NOT NULL,
+    notification_body TEXT,
+    metadata JSON,               -- Stores { reference_id: ..., type: ... }
+    viewed BOOLEAN DEFAULT FALSE, -- true/false
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    
+    INDEX idx_receiver (receiver),
+    INDEX idx_viewed (viewed)
+  );
+`;
+
   // --- Execution Logic ---
 
   connection.query(adminsTable, async (err) => {
@@ -291,6 +309,7 @@ CREATE TABLE IF NOT EXISTS Users (
         { name: "Rental Logs", sql: rentalLogsTable },
         { name: "Verification Requests", sql: verificationRequestsTable },
         { name: "Payment Intents", sql: paymentIntentsTable },
+        { name: "Notifications", sql: notificationTable },
       ];
       dependentTables.forEach((table) => {
         connection.query(table.sql, (err) => {

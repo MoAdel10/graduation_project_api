@@ -159,8 +159,8 @@ const createRentRequest = (req, res) => {
         msg: "Property is not available for renting right now",
       });
     }
-    
-    // must be verified by admin    
+
+    // must be verified by admin
     if (property.is_verified == false) {
       return res.status(400).json({
         msg: "Property is not verified",
@@ -255,6 +255,21 @@ const createRentRequest = (req, res) => {
                       );
                       return res.status(500).json({ msg: "Database error" });
                     }
+
+                    const notifier = req.app.get("notifier");
+                    notifier.send({
+                      sender: renterId, // The person who sent the request
+                      receiver: property.owner_id, // The property owner
+                      type: "RENT_REQUEST",
+                      title: "New Rent Request!",
+                      body: `A user wants to rent "${property.property_name}" from ${check_in_date} to ${check_out_date}.`,
+                      metadata: {
+                        request_id: requestId,
+                        property_id: property.property_id,
+                        type: "rent_request",
+                        requestId: requestId,
+                      },
+                    });
 
                     return res.status(201).json({
                       msg: "Rent request created",
@@ -373,6 +388,20 @@ const acceptRentRequest = (req, res) => {
             });
           }
 
+          const notifier = req.app.get("notifier");
+          notifier.send({
+            sender: landlordId,
+            receiver: rr.renter_id,
+            type: "RENT_REQUEST_ACCEPTED",
+            title: "Request Accepted! 🎉",
+            body: `Your rent request for the property has been accepted. You can now proceed to payment.`,
+            metadata: {
+              request_id: requestId,
+              property_id: rr.property_id,
+              status: "ACCEPTED",
+            },
+          });
+
           return res
             .status(200)
             .json({ msg: "Rent request accepted", request_state: "ACCEPTED" });
@@ -386,35 +415,66 @@ const acceptRentRequest = (req, res) => {
  * POST /rent-requests/:id/reject
  * Who: Landlord
  */
+
 const rejectRentRequest = (req, res) => {
   const landlordId = req.user.userId;
   const requestId = req.params.id;
 
-  // One atomic update with JOIN to enforce ownership + pending
-  const sql = `
-    UPDATE renting_request rr
-    INNER JOIN Property p ON rr.property_id = p.property_id
-    SET rr.request_state = 'REJECTED'
-    WHERE rr.request_id = ?
-      AND rr.request_state = 'PENDING'
-      AND p.owner_id = ?
+  
+  const findSql = `
+    SELECT rr.renter_id, rr.property_id, p.property_name 
+    FROM renting_request rr
+    JOIN Property p ON rr.property_id = p.property_id
+    WHERE rr.request_id = ? AND p.owner_id = ? AND rr.request_state = 'PENDING'
   `;
 
-  connection.query(sql, [requestId, landlordId], (err, result) => {
+  connection.query(findSql, [requestId, landlordId], (err, rows) => {
     if (err) {
-      console.error("❌ DB error (reject):", err);
+      console.error("❌ DB error (reject lookup):", err);
       return res.status(500).json({ msg: "Database error" });
     }
 
-    if (result.affectedRows === 0) {
-      return res
-        .status(404)
-        .json({ msg: "Request not found, not pending, or not owned by you" });
+    if (rows.length === 0) {
+      return res.status(404).json({ 
+        msg: "Request not found, not pending, or not owned by you" 
+      });
     }
 
-    return res
-      .status(200)
-      .json({ msg: "Rent request rejected", request_state: "REJECTED" });
+    const { renter_id, property_id, property_name } = rows[0];
+
+    // 2. Perform the Update
+    const updateSql = `
+      UPDATE renting_request 
+      SET request_state = 'REJECTED' 
+      WHERE request_id = ? AND request_state = 'PENDING'
+    `;
+
+    connection.query(updateSql, [requestId], (err, result) => {
+      if (err) {
+        console.error("❌ DB error (reject update):", err);
+        return res.status(500).json({ msg: "Database error" });
+      }
+
+      // 3. Send Notification
+      const notifier = req.app.get("notifier");
+      notifier.send({
+        sender: landlordId,
+        receiver: renter_id, 
+        type: 'RENT_REQUEST_REJECTED',
+        title: 'Request Declined',
+        body: `Your rent request for "${property_name}" was declined by the owner.`,
+        metadata: { 
+          request_id: requestId, 
+          property_id: property_id,
+          status: 'REJECTED' 
+        }
+      });
+
+      return res.status(200).json({ 
+        msg: "Rent request rejected", 
+        request_state: "REJECTED" 
+      });
+    });
   });
 };
 
@@ -446,6 +506,16 @@ const cancelRentRequest = (req, res) => {
         msg: "Request not found, not yours, or can't be cancelled now",
       });
     }
+
+    const notifier = req.app.get("notifier");
+    notifier.send({
+      sender: renterId,
+      receiver: owner_id,
+      type: "RENT_REQUEST_CANCELLED",
+      title: "Request Cancelled", 
+      body: `The renter has cancelled their request for "${property_name}".`,
+      metadata: { request_id: requestId },
+    });
 
     return res
       .status(200)
