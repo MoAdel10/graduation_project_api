@@ -47,22 +47,14 @@ app.get("/test-db", (req, res) => {
 //     : console.log(`✅ Server running on http://${process.env.URL}`)
 // );
 
-server.listen(PORT, () =>
-  isInDev == "DEV"
-    ? console.log(
-        `✅ Server & Sockets running on http://${process.env.URL}:${PORT}`,
-      )
-    : console.log(`✅ Server & Sockets running on http://${process.env.URL}`),
-);
+if (require.main === module) {
+  server.listen(PORT, () =>
+    isInDev == "DEV"
+      ? console.log(
+          `✅ Server & Sockets running on http://${process.env.URL}:${PORT}`,
+        )
+      : console.log(`✅ Server & Sockets running on http://${process.env.URL}`),
+  );
+}
 
-io.on("connection", (socket) => {
-  const userId = socket.user.userId;
-  socket.join(userId);
-  console.log(`👤 User ${userId} joined their private room.`);
-
-  socket.on("disconnect", () => {
-    console.log("❌ Client disconnected");
-  });
-
-  
-});
+module.exports = { app, server };

@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS Users (
     request_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     property_id INT NOT NULL,
     renter_id CHAR(36) NOT NULL,
+    renting_type ENUM('DAY', 'MONTH') NOT NULL DEFAULT 'DAY',
     request_state ENUM('PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'PAYMENT_PENDING', 'PAID') DEFAULT 'PENDING',
     total_price DECIMAL(10, 2) NOT NULL,
     check_in_date DATE NOT NULL,
@@ -118,12 +119,16 @@ CREATE TABLE IF NOT EXISTS Users (
   const leaseTable = `
   CREATE TABLE IF NOT EXISTS Lease (
     lease_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    request_id CHAR(36) NOT NULL,
     renter_id CHAR(36) NOT NULL,
     owner_id CHAR(36) NOT NULL,
     property_id INT NOT NULL,
-    total_price DECIMAL(10, 2) NOT NULL,
+    renting_type ENUM('DAY', 'MONTH') NOT NULL,
+    status ENUM('UPCOMING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED') NOT NULL DEFAULT 'UPCOMING',
     check_in_date DATE NOT NULL,
     check_out_date DATE NOT NULL,
+    next_billing_date DATE,
+    FOREIGN KEY (request_id) REFERENCES renting_request(request_id) ON DELETE CASCADE,
     FOREIGN KEY (renter_id) REFERENCES Users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE
