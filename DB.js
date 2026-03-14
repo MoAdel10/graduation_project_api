@@ -114,54 +114,46 @@ CREATE TABLE IF NOT EXISTS Users (
     FOREIGN KEY (renter_id) REFERENCES Users(user_id) ON DELETE CASCADE
   );
 `;
-
   const leaseTable = `
   CREATE TABLE IF NOT EXISTS Lease (
     lease_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    request_id CHAR(36) NOT NULL,
     renter_id CHAR(36) NOT NULL,
     owner_id CHAR(36) NOT NULL,
     property_id INT NOT NULL,
+    
+    -- Contract Logic
+    rent_type ENUM('DAY', 'MONTH') NOT NULL, 
     total_price DECIMAL(10, 2) NOT NULL,
     check_in_date DATE NOT NULL,
     check_out_date DATE NOT NULL,
+    
+    -- Status and Clock Sensors
+    status ENUM('UPCOMING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'OVERDUE') DEFAULT 'UPCOMING',
+    next_billing_date DATE NULL, -- The Clock watches this for monthly rent
+    payment_id VARCHAR(255),     -- The Kashier ID of the first payment
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (request_id) REFERENCES renting_request(request_id) ON DELETE CASCADE,
     FOREIGN KEY (renter_id) REFERENCES Users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE
   );
 `;
 
-  const rentalTable = `
-  CREATE TABLE IF NOT EXISTS Rental (
-    rental_id INT AUTO_INCREMENT PRIMARY KEY,
-    renter_id CHAR(36),
-    lessor_id CHAR(36),
-    property_id INT,
-    rentend_on DATE,
-    rent_duration INT,
-    end_date DATE,
-    price_per_day DECIMAL(10,2),
-    total_price DECIMAL(10,2),
-    status VARCHAR(50),
-    FOREIGN KEY (renter_id) REFERENCES Users(user_id),
-    FOREIGN KEY (lessor_id) REFERENCES Users(user_id),
-    FOREIGN KEY (property_id) REFERENCES Property(property_id)
-  );
-`;
-
-  const rentalLogsTable = `
-  CREATE TABLE IF NOT EXISTS Rental_logs (
-    rental_id INT AUTO_INCREMENT PRIMARY KEY,
-    renter_id CHAR(36),
-    lessor_id CHAR(36),
-    property_id INT,
-    rentend_on DATE,
-    rent_duration INT,
-    end_date DATE,
-    price_per_day DECIMAL(10,2),
-    total_price DECIMAL(10,2),
-    FOREIGN KEY (renter_id) REFERENCES Users(user_id),
-    FOREIGN KEY (lessor_id) REFERENCES Users(user_id),
-    FOREIGN KEY (property_id) REFERENCES Property(property_id)
+const invoiceTable = `
+  CREATE TABLE IF NOT EXISTS Invoices (
+    invoice_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    lease_id CHAR(36) NOT NULL,
+    renter_id CHAR(36) NOT NULL,
+    amount DECIMAL(10, 2) NOT NULL,
+    due_date DATE NOT NULL,
+    status ENUM('UNPAID', 'PAID', 'OVERDUE', 'VOID') DEFAULT 'UNPAID',
+    kashier_order_id VARCHAR(255), -- The custom ID you'll send to Kashier
+    paid_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (lease_id) REFERENCES Lease(lease_id) ON DELETE CASCADE,
+    FOREIGN KEY (renter_id) REFERENCES Users(user_id) ON DELETE CASCADE
   );
 `;
 
@@ -305,8 +297,7 @@ CREATE TABLE IF NOT EXISTS Users (
       const dependentTables = [
         { name: "Renting Request", sql: rentingRequestTable },
         { name: "Lease", sql: leaseTable },
-        { name: "Rental", sql: rentalTable },
-        { name: "Rental Logs", sql: rentalLogsTable },
+        {name:"Invoice",sql:invoiceTable},
         { name: "Verification Requests", sql: verificationRequestsTable },
         { name: "Payment Intents", sql: paymentIntentsTable },
         { name: "Notifications", sql: notificationTable },
