@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS Users (
     request_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     property_id INT NOT NULL,
     renter_id CHAR(36) NOT NULL,
+    renting_type ENUM('DAY', 'MONTH') NOT NULL DEFAULT 'DAY',
     request_state ENUM('PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'PAYMENT_PENDING', 'PAID') DEFAULT 'PENDING',
     total_price DECIMAL(10, 2) NOT NULL,
     check_in_date DATE NOT NULL,
@@ -121,19 +122,11 @@ CREATE TABLE IF NOT EXISTS Users (
     renter_id CHAR(36) NOT NULL,
     owner_id CHAR(36) NOT NULL,
     property_id INT NOT NULL,
-    
-    -- Contract Logic
-    rent_type ENUM('DAY', 'MONTH') NOT NULL, 
-    total_price DECIMAL(10, 2) NOT NULL,
+    renting_type ENUM('DAY', 'MONTH') NOT NULL,
+    status ENUM('UPCOMING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED') NOT NULL DEFAULT 'UPCOMING',
     check_in_date DATE NOT NULL,
     check_out_date DATE NOT NULL,
-    
-    -- Status and Clock Sensors
-    status ENUM('UPCOMING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'OVERDUE') DEFAULT 'UPCOMING',
-    next_billing_date DATE NULL, -- The Clock watches this for monthly rent
-    payment_id VARCHAR(255),     -- The Kashier ID of the first payment
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    next_billing_date DATE,
     FOREIGN KEY (request_id) REFERENCES renting_request(request_id) ON DELETE CASCADE,
     FOREIGN KEY (renter_id) REFERENCES Users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE,

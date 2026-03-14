@@ -113,13 +113,19 @@ function hasDuplicateRequest(renterId, propertyId, checkIn, checkOut, cb) {
  */
 const createRentRequest = (req, res) => {
   const renterId = req.user.userId;
-  const { property_id, check_in_date, check_out_date } = req.body;
+  const { property_id, check_in_date, check_out_date, renting_type } = req.body;
 
   // 0) Basic validation
-  if (!property_id || !check_in_date || !check_out_date) {
+  if (!property_id || !check_in_date || !check_out_date || !renting_type) {
     return res.status(400).json({
-      msg: "property_id, check_in_date, check_out_date are required",
+      msg: "property_id, check_in_date, check_out_date, and renting_type are required",
     });
+  }
+
+  if (!["DAY", "MONTH"].includes(renting_type)) {
+    return res
+      .status(400)
+      .json({ msg: "Invalid renting_type. Use 'DAY' or 'MONTH'" });
   }
 
   const dateCheck = validateDateRange(check_in_date, check_out_date);
@@ -129,7 +135,7 @@ const createRentRequest = (req, res) => {
 
   // 1) Property lookup
   const propSql = `
-    SELECT property_id, owner_id, price_per_day, is_available,is_verified
+    SELECT property_id, owner_id, price_per_day, price_value, pricing_unit, is_available, is_verified, property_name
     FROM Property
     WHERE property_id = ?
     LIMIT 1
@@ -146,120 +152,97 @@ const createRentRequest = (req, res) => {
 
     const property = props[0];
 
-    // renter != owner
     if (property.owner_id === renterId) {
-      return res.status(400).json({
-        msg: "You can't rent your own property",
-      });
+      return res.status(400).json({ msg: "You can't rent your own property" });
     }
-
-    // must be listed
     if (property.is_available === 0) {
-      return res.status(409).json({
-        msg: "Property is not available for renting right now",
-      });
+      return res.status(409).json({ msg: "Property is not available for renting right now" });
     }
-
-    // must be verified by admin
     if (property.is_verified == false) {
-      return res.status(400).json({
-        msg: "Property is not verified",
-      });
+      return res.status(400).json({ msg: "Property is not verified" });
     }
 
-    // 2) Property availability check
-    hasOverlap(
-      property.property_id,
-      check_in_date,
-      check_out_date,
-      "___no_id___",
-      (err, overlap) => {
-        if (err) {
-          console.error("❌ DB error (overlap check):", err);
-          return res.status(500).json({ msg: "Database error" });
-        }
+    // Start Transaction
+    connection.beginTransaction(transErr => {
+      if (transErr) {
+        return res.status(500).json({ msg: "Database error starting transaction." });
+      }
 
-        if (overlap) {
-          return res.status(409).json({
-            msg: "Property already reserved for these dates",
-          });
-        }
+      // 2) Property availability check (inside transaction)
+      hasOverlap(
+        property.property_id,
+        check_in_date,
+        check_out_date,
+        null, // No request ID to exclude yet
+        (err, overlap) => {
+          if (err) {
+            return connection.rollback(() => res.status(500).json({ msg: "Database error during overlap check." }));
+          }
+          if (overlap) {
+            return connection.rollback(() => res.status(409).json({ msg: "Property already reserved for these dates" }));
+          }
 
-        // 3) IDEMPOTENCY CHECK (duplicate renter request)
-        hasDuplicateRequest(
-          renterId,
-          property.property_id,
-          check_in_date,
-          check_out_date,
-          (err, exists) => {
-            if (err) {
-              console.error("❌ DB error (duplicate request):", err);
-              return res.status(500).json({ msg: "Database error" });
-            }
+          // 3) Idempotency check (inside transaction)
+          hasDuplicateRequest(
+            renterId,
+            property.property_id,
+            check_in_date,
+            check_out_date,
+            (err, exists) => {
+              if (err) {
+                return connection.rollback(() => res.status(500).json({ msg: "Database error during duplicate check." }));
+              }
+              if (exists) {
+                return connection.rollback(() => res.status(409).json({ msg: "You already have an active rent request for this property and date range" }));
+              }
 
-            if (exists) {
-              return res.status(409).json({
-                msg: "You already have an active rent request for this property and date range",
-              });
-            }
-
-            // 4) Calculate days
-            const daysSql = `SELECT DATEDIFF(?, ?) AS days`;
-            connection.query(
-              daysSql,
-              [check_out_date, check_in_date],
-              (err, diffRows) => {
-                if (err) {
-                  console.error("❌ DB error (datediff):", err);
-                  return res.status(500).json({ msg: "Database error" });
+              // 4) Calculate price
+              let totalPrice;
+              if (renting_type === "DAY") {
+                if (!["DAY", "MONTH", "YEAR"].includes(property.pricing_unit)) {
+                     return res.status(400).json({ msg: "This property is not available for daily rent." });
                 }
-
-                const days = diffRows[0]?.days;
-                if (!days || days <= 0) {
-                  return res.status(400).json({ msg: "Invalid date range" });
-                }
-
+                const days = Math.round((new Date(check_out_date) - new Date(check_in_date)) / (1000 * 60 * 60 * 24));
+                if(days <= 0) return res.status(400).json({ msg: "Invalid date range" });
+                
                 const pricePerDay = Number(property.price_per_day);
-                if (!pricePerDay || pricePerDay <= 0) {
-                  return res.status(400).json({
-                    msg: "Property price_per_day is invalid",
-                  });
-                }
+                if (!pricePerDay || pricePerDay <= 0) return res.status(400).json({ msg: "Property price_per_day is invalid" });
+                
+                totalPrice = Number((pricePerDay * days).toFixed(2));
+                insertRentRequest(totalPrice);
+              } else { // MONTH
+                  if (property.pricing_unit !== "MONTH") {
+                    return res.status(400).json({ msg: "This property is not available for monthly rent." });
+                  }
+                  totalPrice = Number(property.price_value);
+                  insertRentRequest(totalPrice);
+              }
 
-                const totalPrice = Number((pricePerDay * days).toFixed(2));
-
-                // 5) Insert rent request
+              function insertRentRequest(totalPrice) {
                 const requestId = crypto.randomUUID();
                 const insertSql = `
                   INSERT INTO renting_request
-                    (request_id, property_id, renter_id, request_state, total_price, check_in_date, check_out_date)
+                    (request_id, property_id, renter_id, renting_type, request_state, total_price, check_in_date, check_out_date)
                   VALUES
-                    (?, ?, ?, 'PENDING', ?, ?, ?)
+                    (?, ?, ?, ?, 'PENDING', ?, ?, ?)
                 `;
 
-                connection.query(
-                  insertSql,
-                  [
-                    requestId,
-                    property.property_id,
-                    renterId,
-                    totalPrice,
-                    check_in_date,
-                    check_out_date,
-                  ],
-                  (err) => {
-                    if (err) {
-                      console.error(
-                        "❌ DB error (insert renting_request):",
-                        err,
-                      );
-                      return res.status(500).json({ msg: "Database error" });
+                connection.query(insertSql, [requestId, property.property_id, renterId, renting_type, totalPrice, check_in_date, check_out_date], (err) => {
+                  if (err) {
+                    return connection.rollback(() => res.status(500).json({ msg: "Database error creating request." }));
+                  }
+
+                  // If all goes well, commit the transaction
+                  connection.commit(commitErr => {
+                    if (commitErr) {
+                      return connection.rollback(() => res.status(500).json({ msg: "Database error committing transaction." }));
                     }
 
+                    // Send notification AFTER successful commit
                     const notifier = req.app.get("notifier");
                     notifier.send({
-                      sender: renterId, // The person who sent the request
-                      receiver: property.owner_id, // The property owner
+                      sender: renterId,
+                      receiver: property.owner_id,
                       type: "RENT_REQUEST",
                       title: "New Rent Request!",
                       body: `A user wants to rent "${property.property_name}" from ${check_in_date} to ${check_out_date}.`,
@@ -267,7 +250,6 @@ const createRentRequest = (req, res) => {
                         request_id: requestId,
                         property_id: property.property_id,
                         type: "rent_request",
-                        requestId: requestId,
                       },
                     });
 
@@ -277,14 +259,14 @@ const createRentRequest = (req, res) => {
                       request_state: "PENDING",
                       total_price: totalPrice,
                     });
-                  },
-                );
-              },
-            );
-          },
-        );
-      },
-    );
+                  });
+                });
+              }
+            }
+          );
+        }
+      );
+    });
   });
 };
 
@@ -486,40 +468,58 @@ const cancelRentRequest = (req, res) => {
   const renterId = req.user.userId;
   const requestId = req.params.id;
 
-  // Only renter can cancel, and only from PENDING/ACCEPTED
-  const sql = `
-    UPDATE renting_request
-    SET request_state = 'CANCELLED'
-    WHERE request_id = ?
-      AND renter_id = ?
-      AND request_state IN ('PENDING', 'ACCEPTED')
+  // 1. Find the request first to get details for notification
+  const findSql = `
+    SELECT p.owner_id, p.property_name
+    FROM renting_request rr
+    JOIN Property p ON rr.property_id = p.property_id
+    WHERE rr.request_id = ? 
+      AND rr.renter_id = ? 
+      AND rr.request_state IN ('PENDING', 'ACCEPTED')
   `;
 
-  connection.query(sql, [requestId, renterId], (err, result) => {
+  connection.query(findSql, [requestId, renterId], (err, rows) => {
     if (err) {
-      console.error("❌ DB error (cancel):", err);
+      console.error("❌ DB error (cancel lookup):", err);
       return res.status(500).json({ msg: "Database error" });
     }
 
-    if (result.affectedRows === 0) {
+    if (rows.length === 0) {
       return res.status(404).json({
-        msg: "Request not found, not yours, or can't be cancelled now",
+        msg: "Request not found, not yours, or cannot be cancelled now.",
       });
     }
 
-    const notifier = req.app.get("notifier");
-    notifier.send({
-      sender: renterId,
-      receiver: owner_id,
-      type: "RENT_REQUEST_CANCELLED",
-      title: "Request Cancelled", 
-      body: `The renter has cancelled their request for "${property_name}".`,
-      metadata: { request_id: requestId },
-    });
+    const { owner_id, property_name } = rows[0];
 
-    return res
-      .status(200)
-      .json({ msg: "Rent request cancelled", request_state: "CANCELLED" });
+    // 2. Perform the update
+    const updateSql = `
+      UPDATE renting_request
+      SET request_state = 'CANCELLED'
+      WHERE request_id = ?
+    `;
+
+    connection.query(updateSql, [requestId], (err, result) => {
+      if (err || result.affectedRows === 0) {
+        console.error("❌ DB error (cancel update):", err);
+        return res.status(500).json({ msg: "Failed to cancel request" });
+      }
+
+      // 3. Send notification
+      const notifier = req.app.get("notifier");
+      notifier.send({
+        sender: renterId,
+        receiver: owner_id,
+        type: "RENT_REQUEST_CANCELLED",
+        title: "Request Cancelled",
+        body: `The renter has cancelled their request for "${property_name}".`,
+        metadata: { request_id: requestId },
+      });
+
+      return res
+        .status(200)
+        .json({ msg: "Rent request cancelled", request_state: "CANCELLED" });
+    });
   });
 };
 

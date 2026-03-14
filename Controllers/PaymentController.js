@@ -104,62 +104,110 @@ const KashierWebhook = (req, res) => {
   if (data.status === "SUCCESS") {
     const requestId = data.merchantOrderId;
 
-    // Fetch Request & Property details to know who to notify
-    const getDetailsSql = `
-      SELECT rr.renter_id, rr.property_id, rr.total_price, p.owner_id, p.property_name 
-      FROM renting_request rr
-      JOIN Property p ON rr.property_id = p.property_id
-      WHERE rr.request_id = ?
-    `;
-
-    connection.query(getDetailsSql, [requestId], (err, rows) => {
-      if (err || rows.length === 0) {
-        return console.error("❌ Webhook Lookup Error:", err || "Request not found");
+    connection.beginTransaction(transErr => {
+      if (transErr) {
+        console.error("❌ Transaction Start Error:", transErr);
+        return;
       }
 
-      const { renter_id, owner_id, property_id, property_name, total_price } = rows[0];
+      const getDetailsSql = `
+        SELECT 
+          rr.renter_id, rr.property_id, rr.total_price, rr.renting_type, 
+          rr.check_in_date, rr.check_out_date, rr.request_state,
+          p.owner_id, p.property_name 
+        FROM renting_request rr
+        JOIN Property p ON rr.property_id = p.property_id
+        WHERE rr.request_id = ? FOR UPDATE
+      `;
 
-      // Update Request State
-      const updateReqSql = `UPDATE renting_request SET request_state = 'PAID', payment_id = ? WHERE request_id = ?`;
-      
-      connection.query(updateReqSql, [data.transactionId, requestId], (err) => {
-        if (err) return console.error("❌ DB Update Error (Request):", err);
+      connection.query(getDetailsSql, [requestId], (err, rows) => {
+        if (err || rows.length === 0) {
+          console.error("❌ Webhook Lookup Error:", err || "Request not found");
+          return connection.rollback(() => {});
+        }
 
-        // Insert into PaymentIntents
-        const intentSql = `
-          INSERT INTO PaymentIntents (payment_id, user_id, property_id, payment_type, value, payment_method, status)
-          VALUES (?, ?, ?, 'rent', ?, ?, 'succeeded')
-        `;
+        const requestDetails = rows[0];
 
-        connection.query(
-          intentSql, 
-          [data.transactionId, renter_id, property_id, total_price, data.paymentMethod || 'card'], 
-          (intentErr) => {
-            if (intentErr) console.error("❌ DB Insert Error (Intent):", intentErr);
+        // IDEMPOTENCY CHECK
+        if (requestDetails.request_state === 'PAID') {
+          console.log(`✅ Request ${requestId} already processed. Ignoring webhook.`);
+          return connection.rollback(() => {}); // Use rollback to release lock
+        }
+        
+        if (requestDetails.request_state !== 'ACCEPTED' && requestDetails.request_state !== 'PAYMENT_PENDING') {
+           console.error(`❌ Request ${requestId} is not in an acceptable state for payment: ${requestDetails.request_state}`);
+           return connection.rollback(()=>{});
+        }
 
-            // Send Notifications
-            const notifier = req.app.get("notifier");
 
-            // Notify Renter (The payer)
-            notifier.send({
-              receiver: renter_id,
-              type: 'PAYMENT_SUCCESS',
-              title: 'Rent Payment Confirmed! ✅',
-              body: `Your payment for "${property_name}" rent was successful`,
-              metadata: { request_id: requestId, transaction_id: data.transactionId }
+        const {
+          renter_id, owner_id, property_id, property_name, total_price,
+          renting_type, check_in_date, check_out_date
+        } = requestDetails;
+
+        const commission = total_price * 0.02;
+        const ownerEarnings = total_price - commission;
+
+        // Chain of queries within the transaction
+        const queries = [
+          (cb) => connection.query(`UPDATE renting_request SET request_state = 'PAID', payment_id = ? WHERE request_id = ?`, [data.transactionId, requestId], cb),
+          (cb) => connection.query(`UPDATE Users SET balance = balance + ? WHERE user_id = ?`, [ownerEarnings, owner_id], cb),
+          (cb) => {
+            const leaseId = crypto.randomUUID();
+            let nextBillingDate = null;
+            if (renting_type === "MONTH") {
+              const nextBilling = new Date(check_in_date);
+              nextBilling.setMonth(nextBilling.getMonth() + 1);
+              nextBillingDate = nextBilling.toISOString().slice(0, 10);
+            }
+            connection.query(`
+              INSERT INTO Lease (lease_id, request_id, renter_id, owner_id, property_id, renting_type, status, check_in_date, check_out_date, next_billing_date)
+              VALUES (?, ?, ?, ?, ?, ?, 'UPCOMING', ?, ?, ?)`, 
+              [leaseId, requestId, renter_id, owner_id, property_id, renting_type, check_in_date, check_out_date, nextBillingDate], cb
+            );
+          },
+          (cb) => connection.query(`
+            INSERT INTO PaymentIntents (payment_id, user_id, property_id, payment_type, value, payment_method, status)
+            VALUES (?, ?, ?, 'rent', ?, ?, 'succeeded')`,
+            [data.transactionId, renter_id, property_id, total_price, data.paymentMethod || "card"], cb
+          )
+        ];
+
+        // Execute queries in sequence
+        const runQuery = (index) => {
+          if (index >= queries.length) {
+            // All queries succeeded, commit the transaction
+            connection.commit(commitErr => {
+              if (commitErr) {
+                return connection.rollback(() => console.error("❌ Commit Error:", commitErr));
+              }
+
+              // Send notifications AFTER commit
+              const notifier = req.app.get("notifier");
+              notifier.send({
+                receiver: renter_id, type: "PAYMENT_SUCCESS", title: "Rent Payment Confirmed! ✅",
+                body: `Your payment for "${property_name}" rent was successful`,
+                metadata: { request_id: requestId, transaction_id: data.transactionId },
+              });
+              notifier.send({
+                receiver: owner_id, type: "RENT_PAID", title: "Rent Paid! 💰",
+                body: `The renter has paid for "${property_name}". The funds are being processed.`,
+                metadata: { request_id: requestId, amount: total_price },
+              });
+              console.log(`✅ Processed payment for Request ${requestId}`);
             });
+            return;
+          }
 
-            // Notify Landlord (The owner)
-            notifier.send({
-              receiver: owner_id,
-              type: 'RENT_PAID',
-              title: 'rent Paid! 💰',
-              body: `The renter has paid for "${property_name}" . The funds are being processed.`,
-              metadata: { request_id: requestId, amount: total_price }
-            });
-
-            console.log(`✅ Processed payment for Request ${requestId}`);
-        });
+          queries[index]((queryErr, result) => {
+            if (queryErr) {
+              return connection.rollback(() => console.error(`❌ DB Error at step ${index}:`, queryErr));
+            }
+            runQuery(index + 1);
+          });
+        };
+        
+        runQuery(0);
       });
     });
   }

@@ -6,6 +6,8 @@ const owenrShiproutes = require("./OwnerShipRoutes")
 const rentRequestRoutes = require("./RentRequestRoute") 
 const paymentRoutes = require("./PaymentRoutes")
 const notificationsRoute = require("./NotificationRoute")
+const leaseRoute = require("./LeaseRoute")
+const internalRoute = require("./InternalRoute")
 
 function mountRoutes(app){
     app.use("/",authRoute)
@@ -16,6 +18,8 @@ function mountRoutes(app){
     app.use("/", rentRequestRoutes);
     app.use("/",paymentRoutes)
     app.use("/",notificationsRoute)
+    app.use("/",leaseRoute)
+    app.use("/",internalRoute)
     console.log("✅ Routes Mounted");
 }
 

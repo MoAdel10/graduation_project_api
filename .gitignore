@@ -2,3 +2,11 @@
 .env
 /uploads
 test.txt
+
+# Test environment
+/tests
+jest.config.js
+jest.setup.js
+
+# Plan files
+lease_plan (1).txt
