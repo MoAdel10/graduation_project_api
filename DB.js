@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS Users (
     owner_id CHAR(36) NOT NULL,
     property_id INT NOT NULL,
     renting_type ENUM('DAY', 'MONTH') NOT NULL,
-    status ENUM('UPCOMING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED') NOT NULL DEFAULT 'UPCOMING',
+    status ENUM('UPCOMING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED','OVERDUE') NOT NULL DEFAULT 'UPCOMING',
     check_in_date DATE NOT NULL,
     check_out_date DATE NOT NULL,
     next_billing_date DATE,
@@ -195,8 +195,8 @@ const invoiceTable = `
   const notificationTable = `
   CREATE TABLE IF NOT EXISTS Notifications (
     notification_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
-    sender CHAR(36) NOT NULL,    -- Can be a User ID or a 'SYSTEM' identifier
-    receiver CHAR(36) NOT NULL,  -- The target User ID
+    sender VARCHAR(36) NOT NULL,    -- Can be a User ID or a 'SYSTEM' identifier
+    receiver VARCHAR(36) NOT NULL,  -- The target User ID
     event_type VARCHAR(50) NOT NULL, --  'PAYMENT_SUCCESS', 'RENT_REQUEST'
     notification_title VARCHAR(255) NOT NULL,
     notification_body TEXT,
