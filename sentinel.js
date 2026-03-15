@@ -12,10 +12,10 @@ console.log(`Sentinel Active. Monitoring ${HOSTS.length} hosts...`);
 
 
 
-// 1 0 * * * for houre 
+// 0 * * * *for houre 
 // */30 * * * * * for 30 seconds
 // Schedule: Runs at 00:01 every day
-cron.schedule('1 0 * * *', async () => {
+cron.schedule('0 * * * *', async () => {
     console.log(`Heartbeat Start: ${new Date().toLocaleString()}`);
 
     // 2. Map the hosts into a list of fetch promises

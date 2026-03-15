@@ -157,7 +157,10 @@ const runRentalPulse = (req, res) => {
   FROM Invoices i
   JOIN Lease l ON i.lease_id = l.lease_id
   JOIN Property p ON l.property_id = p.property_id
-  WHERE i.status = 'OVERDUE' AND i.due_date <= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+  -- ONLY find overdue invoices where the lease is still IN_PROGRESS
+  WHERE i.status = 'OVERDUE' 
+    AND l.status = 'IN_PROGRESS' 
+    AND i.due_date <= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
 `;
 
   connection.query(severeOverdueSql, (err, badLeases) => {
@@ -174,7 +177,8 @@ const runRentalPulse = (req, res) => {
 
           // 2. RESET THE PROPERTY AVAILABILITY (Crucial for new bookings!)
           connection.query(
-            "UPDATE Property SET status = 'AVAILABLE' WHERE property_id = ?",
+            // NEW CORRECT LINE
+            "UPDATE Property SET is_available = TRUE WHERE property_id = ?",
             [lease.property_id],
           );
 
@@ -202,7 +206,7 @@ const runRentalPulse = (req, res) => {
     });
   });
   console.log("Pulse processed successfully");
-  
+
   return res.status(200).json({ msg: "Pulse processed successfully" });
 };
 
