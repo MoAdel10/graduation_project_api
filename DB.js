@@ -16,7 +16,7 @@ const connection = mysql.createConnection({
 connection.connect((err) => {
   if (err) {
     console.error("❌ Error connecting to MySQL:", err.message);
-    process.exit(1);
+    throw new Error(`Error connecting to MySQL: ${err.message}`);
   } else {
     console.log(
       `✅ Connected to MySQL server at: ${connection.config.host}:${connection.config.port}`,
@@ -31,14 +31,14 @@ function initializeDatabase() {
     (err) => {
       if (err) {
         console.error("❌ Error creating database:", err.message);
-        process.exit(1);
+        throw new Error(`Error creating database: ${err.message}`);
       }
       console.log(`📂 Database "${DATABASE_NAME}" is ready.`);
 
       connection.changeUser({ database: DATABASE_NAME }, (err) => {
         if (err) {
           console.error("❌ Error selecting database:", err.message);
-          process.exit(1);
+          throw new Error(`Error selecting database: ${err.message}`);
         }
         console.log(`🔄 Using database: ${DATABASE_NAME}`);
         createTables();
@@ -89,7 +89,10 @@ CREATE TABLE IF NOT EXISTS Users (
     bathrooms_no INT,
     images JSON,
     ownership_proofs JSON,
-    is_available BOOLEAN DEFAULT TRUE,
+    
+    listing_status ENUM('inactive', 'active', 'under_negotiation', 'sold', 'expired') DEFAULT 'inactive',
+    listing_expiry DATETIME NULL,
+
     is_verified BOOLEAN DEFAULT FALSE,
     is_furnished BOOLEAN DEFAULT FALSE,
     property_type ENUM('for_sale','for_rent') DEFAULT 'for_rent',
@@ -210,6 +213,26 @@ const invoiceTable = `
   );
 `;
 
+  const purchaseRequestsTable = `
+  CREATE TABLE IF NOT EXISTS PurchaseRequests (
+    request_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    property_id INT NOT NULL,
+    buyer_id CHAR(36) NOT NULL,
+    owner_id CHAR(36) NOT NULL,
+
+    message TEXT,
+    status ENUM('PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED') DEFAULT 'PENDING',
+    contact_unlocked BOOLEAN DEFAULT FALSE,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE,
+    FOREIGN KEY (buyer_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+    UNIQUE KEY unique_request (buyer_id, property_id)
+  );
+`;
+
   // --- Execution Logic ---
 
   connection.query(adminsTable, async (err) => {
@@ -294,6 +317,7 @@ const invoiceTable = `
         { name: "Verification Requests", sql: verificationRequestsTable },
         { name: "Payment Intents", sql: paymentIntentsTable },
         { name: "Notifications", sql: notificationTable },
+        { name: "Purchase Requests", sql: purchaseRequestsTable },
       ];
       dependentTables.forEach((table) => {
         connection.query(table.sql, (err) => {

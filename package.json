@@ -5,8 +5,8 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "watch":"nodemon sentinel.js",
-    "test": "jest"
+    "watch": "nodemon sentinel.js",
+    "test": "cross-env NODE_ENV=test jest --testTimeout=10000"
   },
   "author": "",
   "license": "ISC",
@@ -28,6 +28,7 @@
     "underscore": "^1.13.8"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "jest": "^30.3.0",
     "supertest": "^7.2.2"
   }
