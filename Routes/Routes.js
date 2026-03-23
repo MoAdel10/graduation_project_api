@@ -9,20 +9,21 @@ const notificationsRoute = require("./NotificationRoute")
 const leaseRoute = require("./LeaseRoute")
 const internalRoute = require("./InternalRoute")
 const sentinelRoute = require("./SentinelRoute")
-const purchaseRequestRoutes = require("./PurchaseRequestRoute")
+const chatRoutes = require("./ChatRoutes")
 
 function mountRoutes(app){
-    app.use("/api",authRoute)
-    app.use("/api/properties",propertyRoute)
-    app.use("/api/favorites",favoriteRoute)
-    app.use("/api/admin",adminRoute)
-    app.use("/api/ownership",owenrShiproutes)
-    app.use("/api/rent-requests", rentRequestRoutes);
-    app.use("/api/payments",paymentRoutes)
-    app.use("/api/notifications",notificationsRoute)
-    app.use("/api/leases",leaseRoute)
-    app.use("/api/internal",internalRoute)
-    app.use("/api/sentinel",sentinelRoute)
+    app.use("/",authRoute)
+    app.use("/",propertyRoute)
+    app.use("/",favoriteRoute)
+    app.use("/",adminRoute)
+    app.use("/",owenrShiproutes)
+    app.use("/", rentRequestRoutes);
+    app.use("/",paymentRoutes)
+    app.use("/",notificationsRoute)
+    app.use("/",leaseRoute)
+    app.use("/",internalRoute)
+    app.use("/",sentinelRoute)
+    app.use("/",chatRoutes)
     app.use("/api/purchase-request", purchaseRequestRoutes)
     console.log("✅ Routes Mounted");
 }

@@ -137,7 +137,7 @@ CREATE TABLE IF NOT EXISTS Users (
   );
 `;
 
-const invoiceTable = `
+  const invoiceTable = `
   CREATE TABLE IF NOT EXISTS Invoices (
     invoice_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     lease_id CHAR(36) NOT NULL,
@@ -233,6 +233,35 @@ const invoiceTable = `
   );
 `;
 
+  const chatTable = `CREATE TABLE IF NOT EXISTS Chats (
+    chat_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    owner_id CHAR(36) NOT NULL,
+    renter_id CHAR(36) NOT NULL,
+    property_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- This UNIQUE constraint prevents duplicate threads for the same property/users
+    UNIQUE INDEX idx_unique_chat (owner_id, renter_id, property_id),
+    
+    -- Foreign Keys
+    FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (renter_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE
+);
+`;
+
+  const messagesTable = `CREATE TABLE IF NOT EXISTS Messages (
+    message_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    chat_id CHAR(36) NOT NULL,
+    sender_id CHAR(36) NOT NULL,
+    content TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Foreign Keys
+    FOREIGN KEY (chat_id) REFERENCES Chats(chat_id) ON DELETE CASCADE,
+    FOREIGN KEY (sender_id) REFERENCES Users(user_id) ON DELETE CASCADE
+);`;
   // --- Execution Logic ---
 
   connection.query(adminsTable, async (err) => {
@@ -313,11 +342,13 @@ const invoiceTable = `
       const dependentTables = [
         { name: "Renting Request", sql: rentingRequestTable },
         { name: "Lease", sql: leaseTable },
-        {name:"Invoice",sql:invoiceTable},
+        { name: "Invoice", sql: invoiceTable },
         { name: "Verification Requests", sql: verificationRequestsTable },
         { name: "Payment Intents", sql: paymentIntentsTable },
         { name: "Notifications", sql: notificationTable },
         { name: "Purchase Requests", sql: purchaseRequestsTable },
+        { name: "Chats", sql: chatTable },
+        { name: "Messages", sql: messagesTable },
       ];
       dependentTables.forEach((table) => {
         connection.query(table.sql, (err) => {
