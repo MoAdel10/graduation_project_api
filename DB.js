@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS Users (
     listing_expiry DATETIME NULL,
 
     is_verified BOOLEAN DEFAULT FALSE,
+    is_available BOOLEAN DEFAULT FALSE,
     is_furnished BOOLEAN DEFAULT FALSE,
     property_type ENUM('for_sale','for_rent') DEFAULT 'for_rent',
     rate FLOAT,
