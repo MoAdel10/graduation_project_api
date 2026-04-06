@@ -135,7 +135,7 @@ router.post(
 
         await new Promise((resolve, reject) => {
           connection.query(
-            "UPDATE Property SET is_verified = 1 WHERE property_id = ?",
+            "UPDATE Property SET is_verified = 1, is_available = 1 WHERE property_id = ?",
             [property_id],
             (e) => (e ? reject(e) : resolve()),
           );
@@ -197,11 +197,14 @@ router.post("/admin/verification/reject/:request_id", adminAuth, async (req, res
            
             await new Promise((resolve, reject) => {
                 connection.query(
-                    "UPDATE Property SET is_verified = 0 WHERE property_id = ?",
+                    "UPDATE Property SET is_verified = 0 , is_available = 0 WHERE property_id = ?",
                     [property_id],
                     (e) => (e ? reject(e) : resolve())
                 );
             });
+
+            console.log("REJECTED");
+            
 
             await new Promise((resolve, reject) => {
                 connection.query(

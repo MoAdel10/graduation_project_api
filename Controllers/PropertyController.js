@@ -502,9 +502,15 @@ const getMyProperty = (req, res) => {
       price_value, 
       price_per_day, 
       is_available, 
-      is_verified, 
+      is_verified,
+      is_furnished,
+      property_type,
       images,
-      rate
+      rate,
+      size,
+      bedrooms_no,
+      beds_no,
+      bathrooms_no
     FROM Property 
     WHERE owner_id = ?
     ORDER BY property_id DESC

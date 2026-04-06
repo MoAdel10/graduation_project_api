@@ -3,7 +3,7 @@ const triggerReverification = (connection, propertyId, userId, callback) => {
     if (err) return callback(err);
 
    
-    const updateSql = "UPDATE Property SET is_verified = FALSE WHERE property_id = ?";
+    const updateSql = "UPDATE Property SET is_verified = FALSE, is_available = FALSE WHERE property_id = ?";
     
     connection.query(updateSql, [propertyId], (err) => {
       if (err) return connection.rollback(() => callback(err));
