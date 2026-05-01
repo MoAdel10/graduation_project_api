@@ -8,7 +8,7 @@ const {
 } = require("../Utils/classes/KashierPaymentService");
 
 const GetPaymentLink = async (req, res) => {
-  const { request_id, invoice_id, redirect } = req.body;
+  const { request_id, invoice_id, subscription_id, redirect } = req.body;
   const kashier = new KashierPaymentService(
     process.env.PAYMENT_SEC_KEY,
     process.env.PAYMENT_API_KEY,
@@ -19,12 +19,17 @@ const GetPaymentLink = async (req, res) => {
 
   let sql, params, idToUse;
 
-  // Decide if we are paying a NEW request or a MONTHLY invoice
+  // Decide if we are paying a NEW request, a MONTHLY invoice, or a LISTING FEE
   if (invoice_id) {
     sql = `SELECT i.amount as total_price, i.invoice_id as id, u.email FROM Invoices i 
            JOIN Users u ON i.renter_id = u.user_id WHERE i.invoice_id = ? AND i.status = 'UNPAID'`;
     params = [invoice_id];
     idToUse = invoice_id;
+  } else if (subscription_id) {
+    sql = `SELECT ls.amount as total_price, ls.subscription_id as id, u.email FROM ListingSubscriptions ls 
+           JOIN Users u ON ls.owner_id = u.user_id WHERE ls.subscription_id = ? AND ls.status = 'UNPAID'`;
+    params = [subscription_id];
+    idToUse = subscription_id;
   } else {
     sql = `SELECT rr.total_price, rr.request_id as id, u.email FROM renting_request rr 
            JOIN Users u ON rr.renter_id = u.user_id WHERE rr.request_id = ?`;
@@ -113,6 +118,42 @@ const KashierWebhook = (req, res) => {
         });
 
       } else {
+        // Check if it's a Listing Subscription
+        connection.query("SELECT * FROM ListingSubscriptions WHERE subscription_id = ?", [orderId], (subErr, subRows) => {
+          if (subErr) return console.error("❌ Subscription Lookup Error:", subErr);
+
+          if (subRows.length > 0) {
+            // --- SCENARIO C: LISTING SUBSCRIPTION FEE ---
+            const sub = subRows[0];
+            if (sub.status === 'PAID') return; // Idempotency check
+
+            const updateSubSql = `
+              UPDATE ListingSubscriptions 
+              SET status = 'PAID', kashier_order_id = ? 
+              WHERE subscription_id = ?
+            `;
+            connection.query(updateSubSql, [data.transactionId, orderId], (updErr) => {
+              if (updErr) return console.error("❌ Failed to update Subscription:", updErr);
+              
+              const updatePropSql = `
+                UPDATE Property 
+                SET listing_status = 'active', listing_expiry = DATE_ADD(CURDATE(), INTERVAL ? MONTH)
+                WHERE property_id = ?
+              `;
+              connection.query(updatePropSql, [sub.plan_months, sub.property_id], (propUpdErr) => {
+                if (propUpdErr) return console.error("❌ Failed to update Property expiry:", propUpdErr);
+                
+                notifier.send({
+                  receiver: sub.owner_id,
+                  type: "LISTING_FEE_PAID",
+                  title: "Property Listing Active! 🎉",
+                  body: `Your property listing fee of ${sub.amount} EGP was received. It will be active for ${sub.plan_months} months.`,
+                  metadata: { subscription_id: orderId, property_id: sub.property_id }
+                });
+                console.log(`✅ Subscription ${orderId} marked as PAID.`);
+              });
+            });
+          } else {
         // --- SCENARIO B: INITIAL RENT REQUEST (LEASE GRADUATION) ---
         connection.beginTransaction(transErr => {
           if (transErr) return console.error("❌ Transaction Error:", transErr);
@@ -205,6 +246,8 @@ const KashierWebhook = (req, res) => {
 
             runQuery(0);
           });
+        });
+          }
         });
       }
     });

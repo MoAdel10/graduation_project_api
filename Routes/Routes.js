@@ -9,8 +9,6 @@ const notificationsRoute = require("./NotificationRoute")
 const leaseRoute = require("./LeaseRoute")
 const internalRoute = require("./InternalRoute")
 const sentinelRoute = require("./SentinelRoute")
-const purchaseRequestRoutes = require("./PurchaseRequestRoute")
-
 function mountRoutes(app){
     app.use("/api",authRoute)
     app.use("/api/properties",propertyRoute)
@@ -23,7 +21,6 @@ function mountRoutes(app){
     app.use("/api/leases",leaseRoute)
     app.use("/api/internal",internalRoute)
     app.use("/api/sentinel",sentinelRoute)
-    app.use("/api/purchase-request", purchaseRequestRoutes)
     console.log("✅ Routes Mounted");
 }
 
