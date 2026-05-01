@@ -205,6 +205,58 @@ const runRentalPulse = (req, res) => {
       );
     });
   });
+
+  // --- TASK 6: LISTING EXPIRY NOTIFICATION ---
+  const expiryWarningSql = `
+    SELECT property_id, owner_id, property_name, listing_expiry
+    FROM Property
+    WHERE property_type = 'for_sale'
+      AND listing_status = 'active'
+      AND DATE(listing_expiry) = DATE_ADD(CURDATE(), INTERVAL 3 DAY)
+  `;
+  connection.query(expiryWarningSql, (err, warningListings) => {
+    if (err) console.error("❌ Pulse Listing Expiry Warning Error:", err);
+    if (warningListings) {
+      warningListings.forEach((prop) => {
+        notifier.send({
+          sender: "SYSTEM",
+          receiver: prop.owner_id,
+          type: "LISTING_EXPIRY_WARNING",
+          title: "Property Listing Expiring Soon ⏳",
+          body: `Your listing for "${prop.property_name}" will expire in 3 days. Please renew to keep it visible.`,
+          metadata: { property_id: prop.property_id, type: "listing_renewal" }
+        });
+      });
+    }
+  });
+
+  // --- TASK 7: EXPIRE LISTINGS ---
+  const expireListingsSql = `
+    SELECT property_id, owner_id, property_name
+    FROM Property
+    WHERE property_type = 'for_sale'
+      AND listing_status = 'active'
+      AND DATE(listing_expiry) < CURDATE()
+  `;
+  connection.query(expireListingsSql, (err, expiredListings) => {
+    if (err) console.error("❌ Pulse Expire Listings Error:", err);
+    if (expiredListings) {
+      expiredListings.forEach((prop) => {
+        connection.query("UPDATE Property SET listing_status = 'expired' WHERE property_id = ?", [prop.property_id], (updErr) => {
+          if (updErr) return;
+          notifier.send({
+            sender: "SYSTEM",
+            receiver: prop.owner_id,
+            type: "LISTING_EXPIRED",
+            title: "Property Listing Expired 🚫",
+            body: `Your listing for "${prop.property_name}" has expired and is no longer visible to buyers.`,
+            metadata: { property_id: prop.property_id }
+          });
+        });
+      });
+    }
+  });
+
   console.log("Pulse processed successfully");
 
   return res.status(200).json({ msg: "Pulse processed successfully" });
