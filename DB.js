@@ -257,6 +257,7 @@ CREATE TABLE IF NOT EXISTS Users (
     sender_id CHAR(36) NOT NULL,
     content TEXT NOT NULL,
     is_read BOOLEAN DEFAULT FALSE,
+    property_id INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     -- Foreign Keys
