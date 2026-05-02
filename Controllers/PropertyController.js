@@ -4,6 +4,8 @@ require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
 const triggerReverification = require("../Utils/triggerReverification");
+const crypto = require("crypto");
+
 
 const addProperty = (req, res) => {
   if (!req.body || Object.keys(req.body).length === 0) {
@@ -30,7 +32,7 @@ const {
   property_type,
   latitude,
   longitude,
-  
+  sellingPlan,
 } = req.body;
 
 
@@ -71,6 +73,19 @@ if (
 
   // Keep 2 decimals
   pricePerDayNormalized = Number(pricePerDayNormalized.toFixed(2));
+
+  // Handle selling plan for 'for_sale' properties
+  let planMonths = null;
+  let listingAmount = 0;
+  if (property_type === 'for_sale') {
+    planMonths = parseInt(sellingPlan);
+    if (![1, 3, 6].includes(planMonths)) {
+      return res.status(400).json({ msg: "For sale properties require a valid sellingPlan (1, 3, or 6 months)" });
+    }
+    if (planMonths === 1) listingAmount = 120;
+    else if (planMonths === 3) listingAmount = 360;
+    else if (planMonths === 6) listingAmount = 600;
+  }
 
 
   const propertyImages =
@@ -148,17 +163,44 @@ const values = [
       return res.status(500).json({ msg: "Database error" });
     }
 
-    triggerReverification(connection, result.insertId, req.user.userId, (err) => {
-      if (err)
-        return res
-          .status(500)
-          .json({ msg: "Failed to trigger re-verification" });
+    const newPropertyId = result.insertId;
+    let subscriptionId = null;
 
-      res.status(201).json({
-        msg: "Property added successfully",
-        propertyId: result.insertId,
+    const handleSuccess = () => {
+      triggerReverification(connection, newPropertyId, req.user.userId, (err) => {
+        if (err)
+          return res
+            .status(500)
+            .json({ msg: "Failed to trigger re-verification" });
+
+        if (property_type === 'for_sale') {
+          res.status(201).json({
+            msg: "Property added. Please pay the listing fee to activate it.",
+            propertyId: newPropertyId,
+            subscriptionId: subscriptionId
+          });
+        } else {
+          res.status(201).json({
+            msg: "Property added successfully",
+            propertyId: newPropertyId,
+          });
+        }
       });
-    });
+    };
+
+    if (property_type === 'for_sale') {
+      subscriptionId = crypto.randomUUID();
+      const insertSubSql = `INSERT INTO ListingSubscriptions (subscription_id, property_id, owner_id, plan_months, amount) VALUES (?, ?, ?, ?, ?)`;
+      connection.query(insertSubSql, [subscriptionId, newPropertyId, req.user.userId, planMonths, listingAmount], (subErr) => {
+        if (subErr) {
+          console.error("❌ Error inserting subscription:", subErr);
+          return res.status(500).json({ msg: "Database error creating subscription" });
+        }
+        handleSuccess();
+      });
+    } else {
+      handleSuccess();
+    }
   });
 };
 

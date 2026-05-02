@@ -214,23 +214,20 @@ CREATE TABLE IF NOT EXISTS Users (
   );
 `;
 
-  const purchaseRequestsTable = `
-  CREATE TABLE IF NOT EXISTS PurchaseRequests (
-    request_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+
+
+  const listingSubscriptionsTable = `
+  CREATE TABLE IF NOT EXISTS ListingSubscriptions (
+    subscription_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     property_id INT NOT NULL,
-    buyer_id CHAR(36) NOT NULL,
     owner_id CHAR(36) NOT NULL,
-
-    message TEXT,
-    status ENUM('PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED') DEFAULT 'PENDING',
-    contact_unlocked BOOLEAN DEFAULT FALSE,
-
+    plan_months INT NOT NULL,
+    amount DECIMAL(10, 2) NOT NULL,
+    status ENUM('UNPAID', 'PAID') DEFAULT 'UNPAID',
+    kashier_order_id VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
     FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE,
-    FOREIGN KEY (buyer_id) REFERENCES Users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE,
-    UNIQUE KEY unique_request (buyer_id, property_id)
+    FOREIGN KEY (owner_id) REFERENCES Users(user_id) ON DELETE CASCADE
   );
 `;
 
@@ -348,9 +345,9 @@ CREATE TABLE IF NOT EXISTS Users (
         { name: "Verification Requests", sql: verificationRequestsTable },
         { name: "Payment Intents", sql: paymentIntentsTable },
         { name: "Notifications", sql: notificationTable },
-        { name: "Purchase Requests", sql: purchaseRequestsTable },
         { name: "Chats", sql: chatTable },
         { name: "Messages", sql: messagesTable },
+        { name: "Listing Subscriptions", sql: listingSubscriptionsTable },
       ];
       dependentTables.forEach((table) => {
         connection.query(table.sql, (err) => {
