@@ -214,8 +214,6 @@ CREATE TABLE IF NOT EXISTS Users (
   );
 `;
 
-
-
   const listingSubscriptionsTable = `
   CREATE TABLE IF NOT EXISTS ListingSubscriptions (
     subscription_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
@@ -261,6 +259,26 @@ CREATE TABLE IF NOT EXISTS Users (
     FOREIGN KEY (chat_id) REFERENCES Chats(chat_id) ON DELETE CASCADE,
     FOREIGN KEY (sender_id) REFERENCES Users(user_id) ON DELETE CASCADE
 );`;
+
+  const sponserdTable = `CREATE TABLE IF NOT EXISTS Sponsored_Listings (
+    -- The ID of the property being promoted
+    property_id INT PRIMARY KEY, 
+    
+    -- When the promotion starts and ends
+    start_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    end_date DATETIME NOT NULL,
+    
+    
+    -- Total paid for this specific promotion cycle
+    amount_paid DECIMAL(10,2),
+    
+    -- Status to easily toggle without deleting the record
+    is_active BOOLEAN DEFAULT FALSE,
+    is_paid BOOLEAN DEFAULT FALSE,
+
+    FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE
+);`;
+
   // --- Execution Logic ---
 
   connection.query(adminsTable, async (err) => {
@@ -348,6 +366,7 @@ CREATE TABLE IF NOT EXISTS Users (
         { name: "Chats", sql: chatTable },
         { name: "Messages", sql: messagesTable },
         { name: "Listing Subscriptions", sql: listingSubscriptionsTable },
+        { name: "Sponser Listing", sql: sponserdTable },
       ];
       dependentTables.forEach((table) => {
         connection.query(table.sql, (err) => {
