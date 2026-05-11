@@ -10,3 +10,7 @@ jest.setup.js
 
 # Plan files
 lease_plan (1).txt
+
+scripts/import_aqar_seed.js
+
+node_server.log
