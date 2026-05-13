@@ -12,8 +12,8 @@ console.log(`Sentinel Active. Monitoring ${HOSTS.length} hosts...`);
 
 
 
-// 0 * * * *for houre 
-// */30 * * * * * for 30 seconds
+// 0 * * * *for houre (production :D)
+// */30 * * * * * for 30 seconds (for testing only ya ged3aaan :c)
 // Schedule: Runs at 00:01 every day
 cron.schedule('0 * * * *', async () => {
     console.log(`Heartbeat Start: ${new Date().toLocaleString()}`);

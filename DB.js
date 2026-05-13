@@ -260,25 +260,38 @@ CREATE TABLE IF NOT EXISTS Users (
     FOREIGN KEY (sender_id) REFERENCES Users(user_id) ON DELETE CASCADE
 );`;
 
+  //   const sponserdTable = `CREATE TABLE IF NOT EXISTS Sponsored_Listings (
+  //     -- The ID of the property being promoted
+  //     property_id INT PRIMARY KEY,
+
+  //     -- When the promotion starts and ends
+  //     start_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+  //     end_date DATETIME NOT NULL,
+
+  //     -- Total paid for this specific promotion cycle
+  //     amount_paid DECIMAL(10,2),
+
+  //     -- Status to easily toggle without deleting the record
+  //     is_active BOOLEAN DEFAULT FALSE,
+  //     is_paid BOOLEAN DEFAULT FALSE,
+  //     payment_ref VARCHAR(255) DEFAULT NULL,
+
+  //     FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE
+  // );`;
   const sponserdTable = `CREATE TABLE IF NOT EXISTS Sponsored_Listings (
-    -- The ID of the property being promoted
-    property_id INT PRIMARY KEY, 
+    promotion_id INT AUTO_INCREMENT PRIMARY KEY, -- Unique ID for every purchase
+    property_id INT NOT NULL, 
     
-    -- When the promotion starts and ends
     start_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     end_date DATETIME NOT NULL,
-    
-    
-    -- Total paid for this specific promotion cycle
     amount_paid DECIMAL(10,2),
     
-    -- Status to easily toggle without deleting the record
-    is_active BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT FALSE, -- Sentinel only flips this
     is_paid BOOLEAN DEFAULT FALSE,
+    payment_ref VARCHAR(255) DEFAULT NULL,
 
     FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE
 );`;
-
   // --- Execution Logic ---
 
   connection.query(adminsTable, async (err) => {

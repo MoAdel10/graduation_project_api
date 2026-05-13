@@ -224,7 +224,7 @@ const runRentalPulse = (req, res) => {
           type: "LISTING_EXPIRY_WARNING",
           title: "Property Listing Expiring Soon ⏳",
           body: `Your listing for "${prop.property_name}" will expire in 3 days. Please renew to keep it visible.`,
-          metadata: { property_id: prop.property_id, type: "listing_renewal" }
+          metadata: { property_id: prop.property_id, type: "listing_renewal" },
         });
       });
     }
@@ -242,18 +242,90 @@ const runRentalPulse = (req, res) => {
     if (err) console.error("❌ Pulse Expire Listings Error:", err);
     if (expiredListings) {
       expiredListings.forEach((prop) => {
-        connection.query("UPDATE Property SET listing_status = 'expired' WHERE property_id = ?", [prop.property_id], (updErr) => {
+        connection.query(
+          "UPDATE Property SET listing_status = 'expired' WHERE property_id = ?",
+          [prop.property_id],
+          (updErr) => {
+            if (updErr) return;
+            notifier.send({
+              sender: "SYSTEM",
+              receiver: prop.owner_id,
+              type: "LISTING_EXPIRED",
+              title: "Property Listing Expired 🚫",
+              body: `Your listing for "${prop.property_name}" has expired and is no longer visible to buyers.`,
+              metadata: { property_id: prop.property_id },
+            });
+          },
+        );
+      });
+    }
+  });
+
+  // --- TASK 8: EXPIRE FINISHED PROMOTIONS ---
+  // Flip is_active to FALSE for any promotion that has reached its end_date
+  const expirePromoSql = `
+    SELECT sl.promotion_id, sl.property_id, p.owner_id, p.property_name 
+    FROM Sponsored_Listings sl
+    JOIN Property p ON sl.property_id = p.property_id
+    WHERE sl.end_date < NOW() AND sl.is_active = TRUE
+  `;
+
+  connection.query(expirePromoSql, (err, expired) => {
+    if (err) console.error("❌ Pulse Expiry Fetch Error:", err);
+    expired.forEach((promo) => {
+      connection.query(
+        "UPDATE Sponsored_Listings SET is_active = FALSE WHERE promotion_id = ?",
+        [promo.promotion_id],
+        (updErr) => {
           if (updErr) return;
           notifier.send({
-            sender: "SYSTEM",
-            receiver: prop.owner_id,
-            type: "LISTING_EXPIRED",
-            title: "Property Listing Expired 🚫",
-            body: `Your listing for "${prop.property_name}" has expired and is no longer visible to buyers.`,
-            metadata: { property_id: prop.property_id }
+            receiver: promo.owner_id,
+            type: "PROMOTION_EXPIRED",
+            title: "Promotion Ended 🚀",
+            body: `The promotion for "${promo.property_name}" has ended.`,
+            metadata: { property_id: promo.property_id },
           });
-        });
-      });
+          console.log(`📉 Deactivated Promotion ID: ${promo.promotion_id}`);
+        },
+      );
+    });
+  });
+
+  // --- TASK 9: ACTIVATE STACKED PROMOTIONS ---
+  // If a promotion was "Queued" (is_paid=TRUE but is_active=FALSE)
+  // and its start_date has arrived, turn it on now.
+  const activateStackedSql = `
+    UPDATE Sponsored_Listings 
+    SET is_active = TRUE 
+    WHERE is_paid = TRUE 
+      AND is_active = FALSE 
+      AND start_date <= NOW() 
+      AND end_date > NOW()
+  `;
+
+  connection.query(activateStackedSql, (err, result) => {
+    if (err) console.error("❌ Pulse Activation Error:", err);
+    else if (result.affectedRows > 0) {
+      console.log(
+        `🚀 Sentinel: Activated ${result.affectedRows} stacked promotion(s).`,
+      );
+    }
+  });
+
+  // --- TASK 10: PURGE ABANDONED (GHOST) REQUESTS ---
+  // Delete records that were never paid and are older than 24 hours
+  const purgeGhostSql = `
+    DELETE FROM Sponsored_Listings 
+    WHERE is_paid = FALSE 
+    AND start_date < DATE_SUB(NOW(), INTERVAL 24 HOUR)
+  `;
+
+  connection.query(purgeGhostSql, (err, result) => {
+    if (err) console.error("❌ Pulse Ghost Purge Error:", err);
+    else if (result.affectedRows > 0) {
+      console.log(
+        `🧹 Sentinel: Purged ${result.affectedRows} abandoned requests.`,
+      );
     }
   });
 
