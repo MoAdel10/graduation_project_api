@@ -329,7 +329,7 @@ const runRentalPulse = (req, res) => {
     }
   });
 
-  console.log("Pulse processed successfully");
+  // console.log("Pulse processed successfully");
 
   return res.status(200).json({ msg: "Pulse processed successfully" });
 };
