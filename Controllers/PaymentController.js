@@ -21,18 +21,18 @@ const GetPaymentLink = async (req, res) => {
 
   // Decide if we are paying a NEW request, a MONTHLY invoice, or a LISTING FEE
   if (invoice_id) {
-    sql = `SELECT i.amount as total_price, i.invoice_id as id, u.email FROM Invoices i 
-           JOIN Users u ON i.renter_id = u.user_id WHERE i.invoice_id = ? AND i.status = 'UNPAID'`;
+    sql = `SELECT i.amount as total_price, i.invoice_id as id, u.email FROM invoices i 
+           JOIN users u ON i.renter_id = u.user_id WHERE i.invoice_id = ? AND i.status = 'UNPAID'`;
     params = [invoice_id];
     idToUse = invoice_id;
   } else if (subscription_id) {
-    sql = `SELECT ls.amount as total_price, ls.subscription_id as id, u.email FROM ListingSubscriptions ls 
-           JOIN Users u ON ls.owner_id = u.user_id WHERE ls.subscription_id = ? AND ls.status = 'UNPAID'`;
+    sql = `SELECT ls.amount as total_price, ls.subscription_id as id, u.email FROM listingsubscriptions ls 
+           JOIN users u ON ls.owner_id = u.user_id WHERE ls.subscription_id = ? AND ls.status = 'UNPAID'`;
     params = [subscription_id];
     idToUse = subscription_id;
   } else {
     sql = `SELECT rr.total_price, rr.request_id as id, u.email FROM renting_request rr 
-           JOIN Users u ON rr.renter_id = u.user_id WHERE rr.request_id = ?`;
+           JOIN users u ON rr.renter_id = u.user_id WHERE rr.request_id = ?`;
     params = [request_id];
     idToUse = request_id;
   }
@@ -90,7 +90,7 @@ const KashierWebhook = (req, res) => {
     const notifier = req.app.get("notifier");
 
     // Check if this ID belongs to an Invoice first
-    connection.query("SELECT * FROM Invoices WHERE invoice_id = ?", [orderId], (invErr, invRows) => {
+    connection.query("SELECT * FROM invoices WHERE invoice_id = ?", [orderId], (invErr, invRows) => {
       if (invErr) return console.error("❌ Invoice Lookup Error:", invErr);
 
       if (invRows.length > 0) {
@@ -99,7 +99,7 @@ const KashierWebhook = (req, res) => {
         if (invoice.status === 'PAID') return; // Idempotency check
 
         const updateInvSql = `
-          UPDATE Invoices 
+          UPDATE invoices 
           SET status = 'PAID', paid_at = CURRENT_TIMESTAMP, kashier_order_id = ? 
           WHERE invoice_id = ?
         `;
@@ -119,7 +119,7 @@ const KashierWebhook = (req, res) => {
 
       } else {
         // Check if it's a Listing Subscription
-        connection.query("SELECT * FROM ListingSubscriptions WHERE subscription_id = ?", [orderId], (subErr, subRows) => {
+        connection.query("SELECT * FROM listingsubscriptions WHERE subscription_id = ?", [orderId], (subErr, subRows) => {
           if (subErr) return console.error("❌ Subscription Lookup Error:", subErr);
 
           if (subRows.length > 0) {
@@ -128,7 +128,7 @@ const KashierWebhook = (req, res) => {
             if (sub.status === 'PAID') return; // Idempotency check
 
             const updateSubSql = `
-              UPDATE ListingSubscriptions 
+              UPDATE listingsubscriptions 
               SET status = 'PAID', kashier_order_id = ? 
               WHERE subscription_id = ?
             `;
@@ -136,7 +136,7 @@ const KashierWebhook = (req, res) => {
               if (updErr) return console.error("❌ Failed to update Subscription:", updErr);
               
               const updatePropSql = `
-                UPDATE Property 
+                UPDATE property 
                 SET listing_status = 'active', listing_expiry = DATE_ADD(CURDATE(), INTERVAL ? MONTH)
                 WHERE property_id = ?
               `;
@@ -161,7 +161,7 @@ const KashierWebhook = (req, res) => {
           const getDetailsSql = `
             SELECT rr.*, p.owner_id, p.property_name 
             FROM renting_request rr
-            JOIN Property p ON rr.property_id = p.property_id
+            JOIN property p ON rr.property_id = p.property_id
             WHERE rr.request_id = ? FOR UPDATE
           `;
 
@@ -187,7 +187,7 @@ const KashierWebhook = (req, res) => {
               ),
               // 2. Pay the Landlord
               (cb) => connection.query(
-                `UPDATE Users SET balance = balance + ? WHERE user_id = ?`, 
+                `UPDATE users SET balance = balance + ? WHERE user_id = ?`, 
                 [ownerEarnings, requestDetails.owner_id], cb
               ),
               // 3. Create the Actual Lease (The "Graduation")
@@ -200,14 +200,14 @@ const KashierWebhook = (req, res) => {
                   nextBillingDate = nextBilling.toISOString().slice(0, 10);
                 }
                 connection.query(`
-                  INSERT INTO Lease (lease_id, request_id, renter_id, owner_id, property_id, renting_type, status, check_in_date, check_out_date, next_billing_date)
+                  INSERT INTO lease (lease_id, request_id, renter_id, owner_id, property_id, renting_type, status, check_in_date, check_out_date, next_billing_date)
                   VALUES (?, ?, ?, ?, ?, ?, 'UPCOMING', ?, ?, ?)`, 
                   [leaseId, orderId, requestDetails.renter_id, requestDetails.owner_id, requestDetails.property_id, requestDetails.renting_type, requestDetails.check_in_date, requestDetails.check_out_date, nextBillingDate], cb
                 );
               },
               // 4. Log the Payment Intent
               (cb) => connection.query(`
-                INSERT INTO PaymentIntents (payment_id, user_id, property_id, payment_type, value, payment_method, status)
+                INSERT INTO paymentintents (payment_id, user_id, property_id, payment_type, value, payment_method, status)
                 VALUES (?, ?, ?, 'rent', ?, ?, 'succeeded')`,
                 [data.transactionId, requestDetails.renter_id, requestDetails.property_id, requestDetails.total_price, data.paymentMethod || "card"], cb
               )
@@ -300,7 +300,7 @@ const refundPayment = async (req, res) => {
 
         const paymentIntentId = crypto.randomUUID();
         const insertPaymentIntentSql = `
-          INSERT INTO PaymentIntents (payment_id, user_id, property_id, payment_type, value, payment_method, status)
+          INSERT INTO paymentintents (payment_id, user_id, property_id, payment_type, value, payment_method, status)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
         connection.query(insertPaymentIntentSql, [
@@ -349,7 +349,7 @@ const requestWithdrawal = async (req, res) => {
   }
 
   connection.query(
-    "SELECT balance FROM Users WHERE user_id = ?",
+    "SELECT balance FROM users WHERE user_id = ?",
     [userId],
     (err, results) => {
       if (err)
@@ -366,7 +366,7 @@ const requestWithdrawal = async (req, res) => {
 
       const paymentIntentId = crypto.randomUUID();
       const intentSql = `
-            INSERT INTO PaymentIntents (payment_id, user_id, payment_type, value, payment_method, status)
+            INSERT INTO paymentintents (payment_id, user_id, payment_type, value, payment_method, status)
             VALUES (?, ?, 'withdraw', ?, ?, 'pending')
         `;
       connection.query(
@@ -392,11 +392,11 @@ const requestWithdrawal = async (req, res) => {
             if (withdrawalResponse && withdrawalResponse.status === "SUCCESS") {
               const newBalance = balance - amount;
               connection.query(
-                "UPDATE Users SET balance = ? WHERE user_id = ?",
+                "UPDATE users SET balance = ? WHERE user_id = ?",
                 [newBalance, userId],
               );
               connection.query(
-                "UPDATE PaymentIntents SET status = 'succeeded' WHERE payment_id = ?",
+                "UPDATE paymentintents SET status = 'succeeded' WHERE payment_id = ?",
                 [paymentIntentId],
               );
 
@@ -411,7 +411,7 @@ const requestWithdrawal = async (req, res) => {
               return res.status(200).json({ msg: "Withdrawal successful." });
             } else {
               connection.query(
-                "UPDATE PaymentIntents SET status = 'failed' WHERE payment_id = ?",
+                "UPDATE paymentintents SET status = 'failed' WHERE payment_id = ?",
                 [paymentIntentId],
               );
               return res.status(500).json({
@@ -422,7 +422,7 @@ const requestWithdrawal = async (req, res) => {
           } catch (error) {
             console.error("Withdrawal Error: ", error);
             connection.query(
-              "UPDATE PaymentIntents SET status = 'failed' WHERE payment_id = ?",
+              "UPDATE paymentintents SET status = 'failed' WHERE payment_id = ?",
               [paymentIntentId],
             );
             return res.status(500).json({

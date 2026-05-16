@@ -22,7 +22,7 @@ const addToFavorites = async (req, res) => {
     return res.status(400).json({ message: "Invalid or missing user_id/property_id" });
   }
 
-  const getFavoritesQuery = "SELECT favorites FROM Users WHERE user_id = ?";
+  const getFavoritesQuery = "SELECT favorites FROM users WHERE user_id = ?";
   connection.query(getFavoritesQuery, [user_id], (err, results) => {
     if (err) return res.status(500).json({ message: "Database error" });
     if (results.length === 0) return res.status(404).json({ message: "User not found" });
@@ -33,7 +33,7 @@ const addToFavorites = async (req, res) => {
       favorites.push(property_id);
     }
 
-    const updateQuery = "UPDATE Users SET favorites = ? WHERE user_id = ?";
+    const updateQuery = "UPDATE users SET favorites = ? WHERE user_id = ?";
     connection.query(updateQuery, [JSON.stringify(favorites), user_id], (err) => {
       if (err) return res.status(500).json({ message: "Database error" });
 
@@ -52,7 +52,7 @@ const getUserFavorites = async (req, res) => {
   const user_id = req.user?.userId;
   if (!user_id) return res.status(400).json({ message: "Missing user_id" });
 
-  const query = "SELECT favorites FROM Users WHERE user_id = ?";
+  const query = "SELECT favorites FROM users WHERE user_id = ?";
   connection.query(query, [user_id], (err, results) => {
     if (err) return res.status(500).json({ message: "Database error" });
     if (results.length === 0) return res.status(404).json({ message: "User not found" });
@@ -62,7 +62,7 @@ const getUserFavorites = async (req, res) => {
       return res.status(200).json({ message: "No favorites yet", favorites: [] });
 
     const placeholders = favorites.map(() => '?').join(',');
-    const sql = `SELECT * FROM Property WHERE property_id IN (${placeholders})`;
+    const sql = `SELECT * FROM property WHERE property_id IN (${placeholders})`;
 
     connection.query(sql, favorites, (err, properties) => {
       if (err) return res.status(500).json({ message: "Database error" });
@@ -86,7 +86,7 @@ const removeFromFavorites = async (req, res) => {
     return res.status(400).json({ message: "Invalid or missing user_id/property_id" });
   }
 
-  const getFavoritesQuery = "SELECT favorites FROM Users WHERE user_id = ?";
+  const getFavoritesQuery = "SELECT favorites FROM users WHERE user_id = ?";
   connection.query(getFavoritesQuery, [user_id], (err, results) => {
     if (err) return res.status(500).json({ message: "Database error" });
     if (results.length === 0) return res.status(404).json({ message: "User not found" });
@@ -94,7 +94,7 @@ const removeFromFavorites = async (req, res) => {
     let favorites = safeParseArray(results[0].favorites);
     const updatedFavorites = favorites.filter(id => Number(id) !== property_id);
 
-    const updateQuery = "UPDATE Users SET favorites = ? WHERE user_id = ?";
+    const updateQuery = "UPDATE users SET favorites = ? WHERE user_id = ?";
     connection.query(updateQuery, [JSON.stringify(updatedFavorites), user_id], (err) => {
       if (err) return res.status(500).json({ message: "Database error" });
 
@@ -131,7 +131,7 @@ const compareFavoriteProperties = async (req, res) => {
     return res.status(400).json({ message: "Invalid property IDs." });
   }
 
-  const getFavoritesQuery = "SELECT favorites FROM Users WHERE user_id = ?";
+  const getFavoritesQuery = "SELECT favorites FROM users WHERE user_id = ?";
   connection.query(getFavoritesQuery, [user_id], (err, results) => {
     if (err) return res.status(500).json({ message: "Database error" });
     if (results.length === 0) return res.status(404).json({ message: "User not found" });
@@ -151,7 +151,7 @@ const compareFavoriteProperties = async (req, res) => {
     const placeholders = authorizedIds.map(() => '?').join(',');
     const sql = `
       SELECT property_id, property_name, location, price_per_day, size, bedrooms_no, beds_no, bathrooms_no, images
-      FROM Property 
+      FROM property 
       WHERE property_id IN (${placeholders})
     `;
 

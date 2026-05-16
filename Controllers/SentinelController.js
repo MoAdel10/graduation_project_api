@@ -7,8 +7,8 @@ const runRentalPulse = (req, res) => {
   // --- TASK 1: COMPLETED LEASES (Cleanup) ---
   const expiredSql = `
     SELECT l.lease_id, l.renter_id, l.owner_id, p.property_name 
-    FROM Lease l
-    JOIN Property p ON l.property_id = p.property_id
+    FROM lease l
+    JOIN property p ON l.property_id = p.property_id
     WHERE l.check_out_date < CURDATE() AND l.status = 'IN_PROGRESS'
   `;
 
@@ -16,7 +16,7 @@ const runRentalPulse = (req, res) => {
     if (err) console.error("❌ Pulse Cleanup Fetch Error:", err);
     expiredLeases.forEach((lease) => {
       connection.query(
-        "UPDATE Lease SET status = 'COMPLETED' WHERE lease_id = ?",
+        "UPDATE lease SET status = 'COMPLETED' WHERE lease_id = ?",
         [lease.lease_id],
         (updErr) => {
           if (updErr) return;
@@ -38,8 +38,8 @@ const runRentalPulse = (req, res) => {
   // Added check: next_billing_date < check_out_date to stop billing at the end of the lease
   const billingSql = `
     SELECT l.lease_id, l.renter_id, l.owner_id, p.property_name, p.price_value, l.check_out_date
-    FROM Lease l
-    JOIN Property p ON l.property_id = p.property_id
+    FROM lease l
+    JOIN property p ON l.property_id = p.property_id
     WHERE l.renting_type = 'MONTH' 
       AND l.status = 'IN_PROGRESS'
       AND l.next_billing_date = DATE_ADD(CURDATE(), INTERVAL 3 DAY)
@@ -56,7 +56,7 @@ const runRentalPulse = (req, res) => {
         if (tErr) return;
 
         const invSql = `
-          INSERT INTO Invoices (invoice_id, lease_id, renter_id, amount, due_date, status)
+          INSERT INTO invoices (invoice_id, lease_id, renter_id, amount, due_date, status)
           VALUES (?, ?, ?, ?, DATE_ADD(CURDATE(), INTERVAL 3 DAY), 'UNPAID')
         `;
 
@@ -67,7 +67,7 @@ const runRentalPulse = (req, res) => {
             if (invErr) return connection.rollback();
 
             const updateLeaseSql = `
-            UPDATE Lease SET next_billing_date = DATE_ADD(next_billing_date, INTERVAL 1 MONTH) 
+            UPDATE lease SET next_billing_date = DATE_ADD(next_billing_date, INTERVAL 1 MONTH) 
             WHERE lease_id = ?
           `;
 
@@ -97,7 +97,7 @@ const runRentalPulse = (req, res) => {
 
   // --- TASK 3: START UPCOMING LEASES ---
   // If today is check_in_date, move 'UPCOMING' to 'IN_PROGRESS'
-  const startLeaseSql = `UPDATE Lease SET status = 'IN_PROGRESS' WHERE status = 'UPCOMING' AND check_in_date <= CURDATE()`;
+  const startLeaseSql = `UPDATE lease SET status = 'IN_PROGRESS' WHERE status = 'UPCOMING' AND check_in_date <= CURDATE()`;
   connection.query(startLeaseSql, (err, result) => {
     if (err) console.error("❌ Pulse Activation Error:", err);
     else if (result.affectedRows > 0)
@@ -108,9 +108,9 @@ const runRentalPulse = (req, res) => {
   // Find invoices that are UNPAID and past their due_date
   const overdueSql = `
     SELECT i.invoice_id, i.renter_id, i.amount, l.owner_id, p.property_name 
-    FROM Invoices i
-    JOIN Lease l ON i.lease_id = l.lease_id
-    JOIN Property p ON l.property_id = p.property_id
+    FROM invoices i
+    JOIN lease l ON i.lease_id = l.lease_id
+    JOIN property p ON l.property_id = p.property_id
     WHERE i.status = 'UNPAID' AND i.due_date < CURDATE()
   `;
 
@@ -120,7 +120,7 @@ const runRentalPulse = (req, res) => {
     overdueInvoices.forEach((inv) => {
       // Update status to OVERDUE
       connection.query(
-        "UPDATE Invoices SET status = 'OVERDUE' WHERE invoice_id = ?",
+        "UPDATE invoices SET status = 'OVERDUE' WHERE invoice_id = ?",
         [inv.invoice_id],
         (updErr) => {
           if (updErr) return;
@@ -154,9 +154,9 @@ const runRentalPulse = (req, res) => {
   // --- TASK 5: AUTO-CANCEL SEVERE OVERDUE ---
   const severeOverdueSql = `
   SELECT i.lease_id, l.renter_id, l.owner_id, p.property_id, p.property_name 
-  FROM Invoices i
-  JOIN Lease l ON i.lease_id = l.lease_id
-  JOIN Property p ON l.property_id = p.property_id
+  FROM invoices i
+  JOIN lease l ON i.lease_id = l.lease_id
+  JOIN property p ON l.property_id = p.property_id
   -- ONLY find overdue invoices where the lease is still IN_PROGRESS
   WHERE i.status = 'OVERDUE' 
     AND l.status = 'IN_PROGRESS' 
@@ -167,9 +167,9 @@ const runRentalPulse = (req, res) => {
     if (err) return console.error("❌ Pulse Severe Overdue Error:", err);
 
     badLeases.forEach((lease) => {
-      // 1. Terminate the Lease
+      // 1. Terminate the lease
       connection.query(
-        "UPDATE Lease SET status = 'CANCELLED' WHERE lease_id = ?",
+        "UPDATE lease SET status = 'CANCELLED' WHERE lease_id = ?",
         [lease.lease_id],
         (leaseErr) => {
           if (leaseErr)
@@ -178,7 +178,7 @@ const runRentalPulse = (req, res) => {
           // 2. RESET THE PROPERTY AVAILABILITY (Crucial for new bookings!)
           connection.query(
             // NEW CORRECT LINE
-            "UPDATE Property SET is_available = TRUE WHERE property_id = ?",
+            "UPDATE property SET is_available = TRUE WHERE property_id = ?",
             [lease.property_id],
           );
 
@@ -186,20 +186,20 @@ const runRentalPulse = (req, res) => {
           notifier.send({
             receiver: lease.renter_id,
             type: "LEASE_TERMINATED",
-            title: "Lease Cancelled 🚫",
+            title: "lease Cancelled 🚫",
             body: `Your lease for "${lease.property_name}" was terminated due to non-payment.`,
           });
 
-          // 4. Notify Landlord (Property is free again)
+          // 4. Notify Landlord (property is free again)
           notifier.send({
             receiver: lease.owner_id,
             type: "LEASE_TERMINATED",
-            title: "Lease Cancelled 🔑",
-            body: `Lease for "${lease.property_name}" cancelled. The property is now available for new bookings.`,
+            title: "lease Cancelled 🔑",
+            body: `lease for "${lease.property_name}" cancelled. The property is now available for new bookings.`,
           });
 
           console.log(
-            `🚫 Lease ${lease.lease_id} terminated due to severe overdue.`,
+            `🚫 lease ${lease.lease_id} terminated due to severe overdue.`,
           );
         },
       );
@@ -209,7 +209,7 @@ const runRentalPulse = (req, res) => {
   // --- TASK 6: LISTING EXPIRY NOTIFICATION ---
   const expiryWarningSql = `
     SELECT property_id, owner_id, property_name, listing_expiry
-    FROM Property
+    FROM property
     WHERE property_type = 'for_sale'
       AND listing_status = 'active'
       AND DATE(listing_expiry) = DATE_ADD(CURDATE(), INTERVAL 3 DAY)
@@ -222,7 +222,7 @@ const runRentalPulse = (req, res) => {
           sender: "SYSTEM",
           receiver: prop.owner_id,
           type: "LISTING_EXPIRY_WARNING",
-          title: "Property Listing Expiring Soon ⏳",
+          title: "property Listing Expiring Soon ⏳",
           body: `Your listing for "${prop.property_name}" will expire in 3 days. Please renew to keep it visible.`,
           metadata: { property_id: prop.property_id, type: "listing_renewal" },
         });
@@ -233,7 +233,7 @@ const runRentalPulse = (req, res) => {
   // --- TASK 7: EXPIRE LISTINGS ---
   const expireListingsSql = `
     SELECT property_id, owner_id, property_name
-    FROM Property
+    FROM property
     WHERE property_type = 'for_sale'
       AND listing_status = 'active'
       AND DATE(listing_expiry) < CURDATE()
@@ -243,7 +243,7 @@ const runRentalPulse = (req, res) => {
     if (expiredListings) {
       expiredListings.forEach((prop) => {
         connection.query(
-          "UPDATE Property SET listing_status = 'expired' WHERE property_id = ?",
+          "UPDATE property SET listing_status = 'expired' WHERE property_id = ?",
           [prop.property_id],
           (updErr) => {
             if (updErr) return;
@@ -251,7 +251,7 @@ const runRentalPulse = (req, res) => {
               sender: "SYSTEM",
               receiver: prop.owner_id,
               type: "LISTING_EXPIRED",
-              title: "Property Listing Expired 🚫",
+              title: "property Listing Expired 🚫",
               body: `Your listing for "${prop.property_name}" has expired and is no longer visible to buyers.`,
               metadata: { property_id: prop.property_id },
             });
@@ -265,8 +265,8 @@ const runRentalPulse = (req, res) => {
   // Flip is_active to FALSE for any promotion that has reached its end_date
   const expirePromoSql = `
     SELECT sl.promotion_id, sl.property_id, p.owner_id, p.property_name 
-    FROM Sponsored_Listings sl
-    JOIN Property p ON sl.property_id = p.property_id
+    FROM sponsored_listings sl
+    JOIN property p ON sl.property_id = p.property_id
     WHERE sl.end_date < NOW() AND sl.is_active = TRUE
   `;
 
@@ -274,7 +274,7 @@ const runRentalPulse = (req, res) => {
     if (err) console.error("❌ Pulse Expiry Fetch Error:", err);
     expired.forEach((promo) => {
       connection.query(
-        "UPDATE Sponsored_Listings SET is_active = FALSE WHERE promotion_id = ?",
+        "UPDATE sponsored_listings SET is_active = FALSE WHERE promotion_id = ?",
         [promo.promotion_id],
         (updErr) => {
           if (updErr) return;
@@ -295,7 +295,7 @@ const runRentalPulse = (req, res) => {
   // If a promotion was "Queued" (is_paid=TRUE but is_active=FALSE)
   // and its start_date has arrived, turn it on now.
   const activateStackedSql = `
-    UPDATE Sponsored_Listings 
+    UPDATE sponsored_listings 
     SET is_active = TRUE 
     WHERE is_paid = TRUE 
       AND is_active = FALSE 
@@ -315,7 +315,7 @@ const runRentalPulse = (req, res) => {
   // --- TASK 10: PURGE ABANDONED (GHOST) REQUESTS ---
   // Delete records that were never paid and are older than 24 hours
   const purgeGhostSql = `
-    DELETE FROM Sponsored_Listings 
+    DELETE FROM sponsored_listings 
     WHERE is_paid = FALSE 
     AND start_date < DATE_SUB(NOW(), INTERVAL 24 HOUR)
   `;

@@ -14,7 +14,7 @@ const getRentRequests = (req, res) => {
         WHEN p.owner_id = ? THEN 'RECEIVED'
       END AS perspective
     FROM renting_request rr
-    JOIN Property p ON rr.property_id = p.property_id
+    JOIN property p ON rr.property_id = p.property_id
     WHERE rr.renter_id = ? OR p.owner_id = ?
     ORDER BY rr.created_at DESC
   `;
@@ -133,10 +133,10 @@ const createRentRequest = (req, res) => {
     return res.status(400).json({ msg: dateCheck.msg });
   }
 
-  // 1) Property lookup
+  // 1) property lookup
   const propSql = `
     SELECT property_id, owner_id, price_per_day, price_value, pricing_unit, is_available, is_verified, property_name
-    FROM Property
+    FROM property
     WHERE property_id = ?
     LIMIT 1
   `;
@@ -147,7 +147,7 @@ const createRentRequest = (req, res) => {
     }
 
     if (props.length === 0) {
-      return res.status(404).json({ msg: "Property not found" });
+      return res.status(404).json({ msg: "property not found" });
     }
 
     const property = props[0];
@@ -156,10 +156,10 @@ const createRentRequest = (req, res) => {
       return res.status(400).json({ msg: "You can't rent your own property" });
     }
     if (property.is_available === 0) {
-      return res.status(409).json({ msg: "Property is not available for renting right now" });
+      return res.status(409).json({ msg: "property is not available for renting right now" });
     }
     if (property.is_verified == false) {
-      return res.status(400).json({ msg: "Property is not verified" });
+      return res.status(400).json({ msg: "property is not verified" });
     }
 
     // Start Transaction
@@ -168,7 +168,7 @@ const createRentRequest = (req, res) => {
         return res.status(500).json({ msg: "Database error starting transaction." });
       }
 
-      // 2) Property availability check (inside transaction)
+      // 2) property availability check (inside transaction)
       hasOverlap(
         property.property_id,
         check_in_date,
@@ -179,7 +179,7 @@ const createRentRequest = (req, res) => {
             return connection.rollback(() => res.status(500).json({ msg: "Database error during overlap check." }));
           }
           if (overlap) {
-            return connection.rollback(() => res.status(409).json({ msg: "Property already reserved for these dates" }));
+            return connection.rollback(() => res.status(409).json({ msg: "property already reserved for these dates" }));
           }
 
           // 3) Idempotency check (inside transaction)
@@ -206,7 +206,7 @@ const createRentRequest = (req, res) => {
                 if(days <= 0) return res.status(400).json({ msg: "Invalid date range" });
                 
                 const pricePerDay = Number(property.price_per_day);
-                if (!pricePerDay || pricePerDay <= 0) return res.status(400).json({ msg: "Property price_per_day is invalid" });
+                if (!pricePerDay || pricePerDay <= 0) return res.status(400).json({ msg: "property price_per_day is invalid" });
                 
                 totalPrice = Number((pricePerDay * days).toFixed(2));
                 insertRentRequest(totalPrice);
@@ -308,7 +308,7 @@ const acceptRentRequest = (req, res) => {
            rr.check_in_date, rr.check_out_date,
            p.owner_id
     FROM renting_request rr
-    INNER JOIN Property p ON rr.property_id = p.property_id
+    INNER JOIN property p ON rr.property_id = p.property_id
     WHERE rr.request_id = ?
     LIMIT 1
   `;
@@ -349,7 +349,7 @@ const acceptRentRequest = (req, res) => {
         if (overlap) {
           return res
             .status(409)
-            .json({ msg: "Property already reserved for these dates" });
+            .json({ msg: "property already reserved for these dates" });
         }
 
         // Atomic update: only if still pending
@@ -406,7 +406,7 @@ const rejectRentRequest = (req, res) => {
   const findSql = `
     SELECT rr.renter_id, rr.property_id, p.property_name 
     FROM renting_request rr
-    JOIN Property p ON rr.property_id = p.property_id
+    JOIN property p ON rr.property_id = p.property_id
     WHERE rr.request_id = ? AND p.owner_id = ? AND rr.request_state = 'PENDING'
   `;
 
@@ -472,7 +472,7 @@ const cancelRentRequest = (req, res) => {
   const findSql = `
     SELECT p.owner_id, p.property_name
     FROM renting_request rr
-    JOIN Property p ON rr.property_id = p.property_id
+    JOIN property p ON rr.property_id = p.property_id
     WHERE rr.request_id = ? 
       AND rr.renter_id = ? 
       AND rr.request_state IN ('PENDING', 'ACCEPTED')

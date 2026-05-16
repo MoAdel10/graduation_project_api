@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: aqar_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+    ports:
+      - "33066:3306"
+    volumes:
+      - aqar_db_data:/var/lib/mysql
+
+  aqar-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aqar-api:v1.0
+    container_name: aqar_api_main
+    ports:
+      - "8000:8000"
+    command: ["npm", "run", "dev"]
+    env_file: .env.test
+    environment:
+      - DB_HOST=db
+      - DB_PORT=3306
+    healthcheck:
+      # Pings the root route of your express app
+      test: ["CMD", "curl", "-f", "http://localhost:8000/test-db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      - db
+    volumes:
+      - aqar_uploads:/app/uploads
+    restart: unless-stopped
+
+volumes:
+  aqar_db_data:
+  aqar_uploads:

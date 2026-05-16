@@ -34,14 +34,14 @@ const sendPurchaseRequest = async (req, res) => {
     const { property_id, message } = req.body;
 
     if (!property_id) {
-        return res.status(400).json({ message: "Property ID is required." });
+        return res.status(400).json({ message: "property ID is required." });
     }
 
     try {
-        const propertyResults = await query('SELECT owner_id, property_type, listing_status, property_name FROM Property WHERE property_id = ?', [property_id]);
+        const propertyResults = await query('SELECT owner_id, property_type, listing_status, property_name FROM property WHERE property_id = ?', [property_id]);
 
         if (propertyResults.length === 0) {
-            return res.status(404).json({ message: "Property not found." });
+            return res.status(404).json({ message: "property not found." });
         }
 
         const property = propertyResults[0];
@@ -67,7 +67,7 @@ const sendPurchaseRequest = async (req, res) => {
         };
         
         try {
-            const result = await query('INSERT INTO PurchaseRequests SET ?', newRequest);
+            const result = await query('INSERT INTO purchaserequests SET ?', newRequest);
             const notifier = req.app.get("notifier");
             notifier.send({
                 sender: buyer_id,
@@ -105,12 +105,12 @@ const updateRequestStatus = async (req, res) => {
 
     try {
         // Step 1: Securely fetch the request and lock the row for the update
-        const requestResults = await query('SELECT * FROM PurchaseRequests WHERE request_id = ? AND owner_id = ? AND status = "PENDING" FOR UPDATE', [request_id, seller_id]);
+        const requestResults = await query('SELECT * FROM purchaserequests WHERE request_id = ? AND owner_id = ? AND status = "PENDING" FOR UPDATE', [request_id, seller_id]);
 
         if (requestResults.length === 0) {
             await query('ROLLBACK');
             // Check if the request exists at all to give a more specific error
-            const exists = await query('SELECT status FROM PurchaseRequests WHERE request_id = ? AND owner_id = ?', [request_id, seller_id]);
+            const exists = await query('SELECT status FROM purchaserequests WHERE request_id = ? AND owner_id = ?', [request_id, seller_id]);
             if(exists.length > 0) {
                 return res.status(409).json({ message: `Request cannot be updated. Its current status is: ${exists[0].status}.`});
             }
@@ -122,18 +122,18 @@ const updateRequestStatus = async (req, res) => {
         // --- ACCEPTANCE LOGIC ---
         if (status === 'ACCEPTED') {
             // 1. Update the property status to 'under_negotiation'
-            await query("UPDATE Property SET listing_status = 'under_negotiation' WHERE property_id = ? AND listing_status = 'active'", [property_id]);
+            await query("UPDATE property SET listing_status = 'under_negotiation' WHERE property_id = ? AND listing_status = 'active'", [property_id]);
 
             // 2. Update the accepted request and unlock contact
-            await query("UPDATE PurchaseRequests SET status = 'ACCEPTED', contact_unlocked = TRUE WHERE request_id = ?", [request_id]);
+            await query("UPDATE purchaserequests SET status = 'ACCEPTED', contact_unlocked = TRUE WHERE request_id = ?", [request_id]);
             
             // 3. Find other pending requests for this property
-            const otherRequests = await query("SELECT request_id, buyer_id FROM PurchaseRequests WHERE property_id = ? AND request_id != ? AND status = 'PENDING'", [property_id, request_id]);
+            const otherRequests = await query("SELECT request_id, buyer_id FROM purchaserequests WHERE property_id = ? AND request_id != ? AND status = 'PENDING'", [property_id, request_id]);
 
             // 4. Reject all other pending requests for the same property
             if (otherRequests.length > 0) {
                 const otherRequestIds = otherRequests.map(r => r.request_id);
-                await query("UPDATE PurchaseRequests SET status = 'REJECTED' WHERE request_id IN (?)", [otherRequestIds]);
+                await query("UPDATE purchaserequests SET status = 'REJECTED' WHERE request_id IN (?)", [otherRequestIds]);
             }
             
             // 5. Send notifications
@@ -163,7 +163,7 @@ const updateRequestStatus = async (req, res) => {
 
         // --- REJECTION LOGIC ---
         } else { // status === 'REJECTED'
-            await query("UPDATE PurchaseRequests SET status = 'REJECTED' WHERE request_id = ?", [request_id]);
+            await query("UPDATE purchaserequests SET status = 'REJECTED' WHERE request_id = ?", [request_id]);
             
             const notifier = req.app.get("notifier");
             notifier.send({
@@ -192,11 +192,11 @@ const cancelRequest = async (req, res) => {
 
     try {
         // Atomically check status and owner, then update.
-        const result = await query("UPDATE PurchaseRequests SET status = 'CANCELLED' WHERE request_id = ? AND buyer_id = ? AND status = 'PENDING'", [request_id, buyer_id]);
+        const result = await query("UPDATE purchaserequests SET status = 'CANCELLED' WHERE request_id = ? AND buyer_id = ? AND status = 'PENDING'", [request_id, buyer_id]);
 
         if (result.affectedRows === 0) {
             // Investigate why it failed
-            const request = await query('SELECT buyer_id, status FROM PurchaseRequests WHERE request_id = ?', [request_id]);
+            const request = await query('SELECT buyer_id, status FROM purchaserequests WHERE request_id = ?', [request_id]);
             if (request.length === 0) {
                 return res.status(404).json({ message: "Purchase request not found." });
             }
@@ -222,9 +222,9 @@ const getMyRequests = async (req, res) => {
             SELECT pr.request_id, pr.status, pr.message, pr.created_at, pr.contact_unlocked,
                    p.property_id, p.property_name, p.images, p.listing_status,
                    o.first_name as owner_first_name, o.second_name as owner_second_name
-            FROM PurchaseRequests pr
-            JOIN Property p ON pr.property_id = p.property_id
-            JOIN Users o ON pr.owner_id = o.user_id
+            FROM purchaserequests pr
+            JOIN property p ON pr.property_id = p.property_id
+            JOIN users o ON pr.owner_id = o.user_id
             WHERE pr.buyer_id = ?
             ORDER BY pr.created_at DESC
         `;
@@ -247,9 +247,9 @@ const getRequestsForMyProperties = async (req, res) => {
                 b.first_name as buyer_first_name,
                 b.second_name as buyer_second_name,
                 b.email as buyer_email
-            FROM PurchaseRequests pr
-            JOIN Property p ON pr.property_id = p.property_id
-            JOIN Users b ON pr.buyer_id = b.user_id
+            FROM purchaserequests pr
+            JOIN property p ON pr.property_id = p.property_id
+            JOIN users b ON pr.buyer_id = b.user_id
             WHERE pr.owner_id = ?
             ORDER BY pr.created_at DESC
         `;
@@ -268,11 +268,11 @@ const markPropertyAsSold = async (req, res) => {
     await query('START TRANSACTION');
     try {
         // Step 1: Securely fetch the property and lock the row
-        const propertyResults = await query("SELECT listing_status FROM Property WHERE property_id = ? AND owner_id = ? FOR UPDATE", [property_id, owner_id]);
+        const propertyResults = await query("SELECT listing_status FROM property WHERE property_id = ? AND owner_id = ? FOR UPDATE", [property_id, owner_id]);
 
         if (propertyResults.length === 0) {
             await query('ROLLBACK');
-            return res.status(404).json({ message: "Property not found or you are not the owner." });
+            return res.status(404).json({ message: "property not found or you are not the owner." });
         }
         
         const property = propertyResults[0];
@@ -282,13 +282,13 @@ const markPropertyAsSold = async (req, res) => {
         }
         
         // Step 2: Update the property status to 'sold'
-        await query("UPDATE Property SET listing_status = 'sold' WHERE property_id = ? AND owner_id = ?", [property_id, owner_id]);
+        await query("UPDATE property SET listing_status = 'sold' WHERE property_id = ? AND owner_id = ?", [property_id, owner_id]);
         
         // Step 3: Reject all other pending requests for the same property
-        const otherRequests = await query("SELECT request_id, buyer_id FROM PurchaseRequests WHERE property_id = ? AND status = 'PENDING'", [property_id]);
+        const otherRequests = await query("SELECT request_id, buyer_id FROM purchaserequests WHERE property_id = ? AND status = 'PENDING'", [property_id]);
         if (otherRequests.length > 0) {
             const otherRequestIds = otherRequests.map(r => r.request_id);
-            await query("UPDATE PurchaseRequests SET status = 'REJECTED' WHERE request_id IN (?)", [otherRequestIds]);
+            await query("UPDATE purchaserequests SET status = 'REJECTED' WHERE request_id IN (?)", [otherRequestIds]);
             
             // Step 4: Notify rejected buyers
             const notifier = req.app.get("notifier");
@@ -297,7 +297,7 @@ const markPropertyAsSold = async (req, res) => {
                     sender: owner_id, // or 'SYSTEM'
                     receiver: rejectedReq.buyer_id,
                     event_type: "PROPERTY_SOLD",
-                    notification_title: "Property Sold",
+                    notification_title: "property Sold",
                     notification_body: "A property you were interested in has been sold.",
                     metadata: { property_id }
                 });
@@ -305,7 +305,7 @@ const markPropertyAsSold = async (req, res) => {
         }
         
         await query('COMMIT');
-        res.status(200).json({ message: "Property successfully marked as sold. All pending requests have been rejected." });
+        res.status(200).json({ message: "property successfully marked as sold. All pending requests have been rejected." });
 
     } catch (error) {
         await query('ROLLBACK');
