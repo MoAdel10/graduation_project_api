@@ -38,6 +38,16 @@ services:
     volumes:
       - aqar_uploads:/app/uploads
     restart: unless-stopped
+  sentinel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aqar-api:v1.0
+    container_name: aqar_sentinel
+    command: ["npm","run","watch"]
+    env_file: .env.test
+
+
 
 volumes:
   aqar_db_data:
