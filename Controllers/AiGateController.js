@@ -14,7 +14,7 @@ const getAiPropertiesSync = (req, res) => {
       pricing_unit, price_value, price_per_day,
       size, bedrooms_no, beds_no, bathrooms_no,
       images, is_furnished, property_type,listing_status
-    FROM Property
+    FROM property
   `;
   
   connection.query(query, (err, results) => {

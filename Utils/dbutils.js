@@ -3,7 +3,7 @@ const connection = require("../DB");
 // Fetch all admins
 const getAllAdmins = () => {
   return new Promise((resolve, reject) => {
-    const sql = "SELECT admin_id, email, role FROM Admins";
+    const sql = "SELECT admin_id, email, role FROM admins";
     connection.query(sql, (err, results) => {
       if (err) return reject(err);
       resolve(results);
@@ -14,7 +14,7 @@ const getAllAdmins = () => {
 // Fetch all users
 const getAllUsers = () => {
   return new Promise((resolve, reject) => {
-    const sql = "SELECT user_id, first_name,second_name, email FROM Users";
+    const sql = "SELECT user_id, first_name,second_name, email FROM users";
     connection.query(sql, (err, results) => {
       if (err) return reject(err);
       resolve(results);
@@ -48,7 +48,7 @@ const getLatestRequestIDByProperty = (property_id) => {
     // Sort by created_at descending and take the top 1
     const sql = `
       SELECT request_id 
-      FROM VerificationRequests 
+      FROM verificationrequests 
       WHERE property_id = ? AND status = 'pending'
       ORDER BY created_at DESC 
       LIMIT 1
@@ -75,13 +75,13 @@ const getAllVerifcationRequests = () => {
         u.first_name, 
         u.second_name, 
         u.email AS owner_email
-      FROM VerificationRequests vr
-      INNER JOIN Property p ON vr.property_id = p.property_id
-      INNER JOIN Users u ON p.owner_id = u.user_id
+      FROM verificationrequests vr
+      INNER JOIN property p ON vr.property_id = p.property_id
+      INNER JOIN users u ON p.owner_id = u.user_id
       INNER JOIN (
         -- Subquery to find the latest request timestamp per property
         SELECT property_id, MAX(created_at) as latest_request
-        FROM VerificationRequests
+        FROM verificationrequests
         WHERE status = 'pending'
         GROUP BY property_id
       ) latest ON vr.property_id = latest.property_id AND vr.created_at = latest.latest_request

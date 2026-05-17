@@ -66,31 +66,20 @@ router.get(
 
       const property = results[0];
 
-      // Parse JSON for images and proofs
-      property.images =
-        typeof property.images === "string"
-          ? JSON.parse(property.images)
-          : property.images;
-      property.ownership_proofs =
-        typeof property.ownership_proofs === "string"
-          ? JSON.parse(property.ownership_proofs)
-          : property.ownership_proofs;
-
-      // Check if there's a pending request for this property to show the Approve/Reject buttons
-      connection.query(
-        "SELECT request_id FROM VerificationRequests WHERE property_id = ? AND status = 'pending' LIMIT 1",
-        [property_id],
-        (err, requestResults) => {
-          const request_id =
-            requestResults.length > 0 ? requestResults[0].request_id : null;
-
-          // Render the same view_property.ejs, passing the request_id if it exists
-          res.render("admin/view_property", {
-            admin: req.admin,
-            property: { ...property, request_id },
-          });
-        },
-      );
+        // Check if there's a pending request for this property to show the Approve/Reject buttons
+        connection.query(
+            "SELECT request_id FROM verificationrequests WHERE property_id = ? AND status = 'pending' LIMIT 1",
+            [property_id],
+            (err, requestResults) => {
+                const request_id = requestResults.length > 0 ? requestResults[0].request_id : null;
+                
+                // Render the same view_property.ejs, passing the request_id if it exists
+                res.render("admin/view_property", { 
+                    admin: req.admin, 
+                    property: { ...property, request_id } 
+                });
+            }
+        );
     } catch (error) {
       console.error(error);
       res.status(500).send("Error loading property");
@@ -103,7 +92,7 @@ router.get("/admin/properties/view/:id", adminAuth, async (req, res) => {
     const results = await getProperty(req.params.id);
 
     if (results.length === 0) {
-      return res.status(404).send("Property not found");
+      return res.status(404).send("property not found");
     }
 
     const property = results[0];
@@ -136,7 +125,7 @@ router.post(
       try {
         const [request] = await new Promise((resolve, reject) => {
           connection.query(
-            "SELECT property_id,user_id FROM VerificationRequests WHERE request_id = ?",
+            "SELECT property_id FROM verificationrequests WHERE request_id = ?",
             [request_id],
             (e, r) => (e ? reject(e) : resolve(r)),
           );
@@ -147,7 +136,7 @@ router.post(
 
         await new Promise((resolve, reject) => {
           connection.query(
-            "UPDATE Property SET is_verified = 1, is_available = 1 WHERE property_id = ?",
+            "UPDATE property SET is_verified = 1, is_available = 1 WHERE property_id = ?",
             [property_id],
             (e) => (e ? reject(e) : resolve()),
           );
@@ -155,7 +144,7 @@ router.post(
 
         await new Promise((resolve, reject) => {
           connection.query(
-            "UPDATE VerificationRequests SET status = 'approved', admin_id = ? WHERE request_id = ?",
+            "UPDATE verificationrequests SET status = 'approved', admin_id = ? WHERE request_id = ?",
             [admin_id, request_id],
             (e) => (e ? reject(e) : resolve()),
           );
@@ -163,7 +152,7 @@ router.post(
 
         await new Promise((resolve, reject) => {
           connection.query(
-            "UPDATE VerificationRequests SET status = 'rejected', rejection_reason = 'Superseded by newer approval' WHERE property_id = ? AND status = 'pending' AND request_id != ?",
+            "UPDATE verificationrequests SET status = 'rejected', rejection_reason = 'Superseded by newer approval' WHERE property_id = ? AND status = 'pending' AND request_id != ?",
             [property_id, request_id],
             (e) => (e ? reject(e) : resolve()),
           );
@@ -204,69 +193,58 @@ router.post(
     connection.beginTransaction(async (err) => {
       if (err) return res.status(500).send("Transaction Error");
 
-      try {
-        const [request] = await new Promise((resolve, reject) => {
-          connection.query(
-            "SELECT property_id,user_id,rejection_reason FROM VerificationRequests WHERE request_id = ?",
-            [request_id],
-            (e, r) => (e ? reject(e) : resolve(r)),
-          );
-        });
-
-        if (!request) throw new Error("Request not found");
-        const property_id = request.property_id;
-
-        await new Promise((resolve, reject) => {
-          connection.query(
-            "UPDATE Property SET is_verified = 0 , is_available = 0 WHERE property_id = ?",
-            [property_id],
-            (e) => (e ? reject(e) : resolve()),
-          );
-        });
-
-        console.log("REJECTED");
-
-        await new Promise((resolve, reject) => {
-          connection.query(
-            "UPDATE VerificationRequests SET status = 'rejected', rejection_reason = ?, admin_id = ? WHERE request_id = ?",
-            [reason, admin_id, request_id],
-            (e) => (e ? reject(e) : resolve()),
-          );
-        });
-
-        await new Promise((resolve, reject) => {
-          connection.query(
-            "UPDATE VerificationRequests SET status = 'rejected', rejection_reason = ? WHERE property_id = ? AND status = 'pending' AND request_id != ?",
-            [
-              `Rejected alongside request ${request_id}: ${reason}`,
-              property_id,
-              request_id,
-            ],
-            (e) => (e ? reject(e) : resolve()),
-          );
-        });
-
-        connection.commit((err) => {
-          if (err)
-            return connection.rollback(() => {
-              throw err;
+        try {
+            const [request] = await new Promise((resolve, reject) => {
+                connection.query(
+                    "SELECT property_id FROM verificationrequests WHERE request_id = ?",
+                    [request_id],
+                    (e, r) => (e ? reject(e) : resolve(r))
+                );
             });
-            console.log(reason);
+
+            if (!request) throw new Error("Request not found");
+            const property_id = request.property_id;
+
+           
+            await new Promise((resolve, reject) => {
+                connection.query(
+                    "UPDATE property SET is_verified = 0 , is_available = 0 WHERE property_id = ?",
+                    [property_id],
+                    (e) => (e ? reject(e) : resolve())
+                );
+            });
+
+            console.log("REJECTED");
             
-          notifier.send({
-            receiver: request.user_id,
-            type: "property_rejection",
-            title: `Your property has been rejected`,
-            body: `${reason}`,
-          });
-          res.redirect("/admin/verification/requests");
-        });
-      } catch (error) {
-        connection.rollback(() => {
-          console.error("❌ Rejection Error:", error);
-          res.status(500).send("Server Error during rejection");
-        });
-      }
+
+            await new Promise((resolve, reject) => {
+                connection.query(
+                    "UPDATE verificationrequests SET status = 'rejected', rejection_reason = ?, admin_id = ? WHERE request_id = ?",
+                    [reason, admin_id, request_id],
+                    (e) => (e ? reject(e) : resolve())
+                );
+            });
+
+           
+            await new Promise((resolve, reject) => {
+                connection.query(
+                    "UPDATE verificationrequests SET status = 'rejected', rejection_reason = ? WHERE property_id = ? AND status = 'pending' AND request_id != ?",
+                    [`Rejected alongside request ${request_id}: ${reason}`, property_id, request_id],
+                    (e) => (e ? reject(e) : resolve())
+                );
+            });
+
+            connection.commit((err) => {
+                if (err) return connection.rollback(() => { throw err; });
+                res.redirect("/admin/verification/requests");
+            });
+
+        } catch (error) {
+            connection.rollback(() => {
+                console.error("❌ Rejection Error:", error);
+                res.status(500).send("Server Error during rejection");
+            });
+        }
     });
   },
 );

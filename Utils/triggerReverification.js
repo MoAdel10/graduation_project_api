@@ -3,14 +3,14 @@ const triggerReverification = (connection, propertyId, userId, callback) => {
     if (err) return callback(err);
 
    
-    const updateSql = "UPDATE Property SET is_verified = FALSE, is_available = FALSE WHERE property_id = ?";
+    const updateSql = "UPDATE property SET is_verified = FALSE, is_available = FALSE WHERE property_id = ?";
     
     connection.query(updateSql, [propertyId], (err) => {
       if (err) return connection.rollback(() => callback(err));
 
       
       const requestSql = `
-        INSERT INTO VerificationRequests (property_id, user_id, status) 
+        INSERT INTO verificationrequests (property_id, user_id, status) 
         VALUES (?, ?, 'pending')
       `;
 

@@ -61,12 +61,12 @@ const getInbox = async (req, res) => {
       u.user_id AS partner_id,
       m.content AS last_message,
       m.created_at AS last_message_time,
-      (SELECT COUNT(*) FROM Messages WHERE chat_id = c.chat_id AND is_read = 0 AND sender_id != ?) AS unread_count
-    FROM Chats c
-    JOIN Property p ON c.property_id = p.property_id
-    JOIN Users u ON u.user_id = IF(c.owner_id = ?, c.renter_id, c.owner_id)
-    LEFT JOIN Messages m ON m.message_id = (
-      SELECT message_id FROM Messages 
+      (SELECT COUNT(*) FROM messages WHERE chat_id = c.chat_id AND is_read = 0 AND sender_id != ?) AS unread_count
+    FROM chats c
+    JOIN property p ON c.property_id = p.property_id
+    JOIN users u ON u.user_id = IF(c.owner_id = ?, c.renter_id, c.owner_id)
+    LEFT JOIN messages m ON m.message_id = (
+      SELECT message_id FROM messages 
       WHERE chat_id = c.chat_id 
       ORDER BY created_at DESC LIMIT 1
     )
@@ -105,7 +105,7 @@ const getChatHistory = async (req, res) => {
 
   const sql = `
     SELECT message_id, sender_id, content, is_read, created_at 
-    FROM Messages 
+    FROM messages 
     WHERE chat_id = ? 
     ORDER BY created_at ASC
   `;
@@ -135,7 +135,7 @@ const markAsRead = async (req, res) => {
   }
 
   // Mark messages as read ONLY if the current user is the receiver (sender_id != userId)
-  const sql = `UPDATE Messages SET is_read = 1 WHERE chat_id = ? AND sender_id != ?`;
+  const sql = `UPDATE messages SET is_read = 1 WHERE chat_id = ? AND sender_id != ?`;
 
   try {
     connection.query(sql, [chat_id, userId], (err, result) => {

@@ -33,9 +33,9 @@ const SendPromotionRequest = async (req, res) => {
   // We look for the latest end_date among PAID promotions for this property
   const checkSql = `
     SELECT u.email, 
-    (SELECT MAX(end_date) FROM Sponsored_Listings WHERE property_id = ? AND is_paid = TRUE AND end_date > NOW()) as latest_expiry
-    FROM Users u 
-    JOIN Property p ON u.user_id = p.owner_id 
+    (SELECT MAX(end_date) FROM sponsored_listings WHERE property_id = ? AND is_paid = TRUE AND end_date > NOW()) as latest_expiry
+    FROM users u 
+    JOIN property p ON u.user_id = p.owner_id 
     WHERE p.property_id = ? AND p.owner_id = ?`;
 
   connection.query(
@@ -60,7 +60,7 @@ const SendPromotionRequest = async (req, res) => {
 
       // 2. Insert a NEW record (Each attempt gets a unique ID)
       const insertSql = `
-      INSERT INTO Sponsored_Listings 
+      INSERT INTO sponsored_listings 
       (property_id, start_date, end_date, amount_paid, is_active, is_paid) 
       VALUES (?, ?, ?, ?, FALSE, FALSE)
     `;
@@ -142,7 +142,7 @@ const SponsorshipWebhook = (req, res) => {
     // We update the specific promotion record
     // Logic: is_active only becomes TRUE if start_date is now or in the past
     const updateSql = `
-      UPDATE Sponsored_Listings 
+      UPDATE sponsored_listings 
       SET is_paid = TRUE, 
           is_active = CASE 
             WHEN start_date <= NOW() THEN TRUE 
@@ -163,8 +163,8 @@ const SponsorshipWebhook = (req, res) => {
         // Fetch owner info for the success notification
         const ownerSql = `
           SELECT u.user_id, p.property_name 
-          FROM Property p 
-          JOIN Users u ON p.owner_id = u.user_id 
+          FROM property p 
+          JOIN users u ON p.owner_id = u.user_id 
           WHERE p.property_id = ?`;
 
         connection.query(ownerSql, [propertyId], (ownErr, rows) => {
