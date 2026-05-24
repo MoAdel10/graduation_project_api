@@ -128,9 +128,11 @@ const sql = `
     is_furnished,
     property_type,
     latitude,
-    longitude
+    longitude,
+    listing_status,
+    is_available
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
 
 
@@ -153,7 +155,9 @@ const values = [
   is_furnished==true?1:0,
   property_type,
   latitude,
-  longitude
+  longitude,
+  property_type === 'for_rent' ? 'active' : 'inactive',
+  property_type === 'for_rent' ? 1 : 0
 ];
 
 

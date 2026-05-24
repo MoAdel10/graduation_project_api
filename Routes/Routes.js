@@ -10,6 +10,7 @@ const leaseRoute = require("./LeaseRoute")
 const internalRoute = require("./InternalRoute")
 const sentinelRoute = require("./SentinelRoute")
 const chatRoutes = require("./ChatRoutes")
+const reviewRoutes = require("./ReviewRoutes")
 const sponserRoute = require("./SponserRoute")
 const AiGateController = require("./AiGateRouter")
 
@@ -26,6 +27,7 @@ function mountRoutes(app){
     app.use("/",internalRoute)
     app.use("/",sentinelRoute)
     app.use("/",chatRoutes)
+    app.use("/",reviewRoutes)
     app.use("/",sponserRoute)
     app.use("/",AiGateController)
     console.log("✅ Routes Mounted");

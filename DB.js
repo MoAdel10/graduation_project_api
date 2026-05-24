@@ -260,24 +260,6 @@ CREATE TABLE IF NOT EXISTS users (
     FOREIGN KEY (sender_id) REFERENCES users(user_id) ON DELETE CASCADE
 );`;
 
-  //   const sponserdTable = `CREATE TABLE IF NOT EXISTS Sponsored_Listings (
-  //     -- The ID of the property being promoted
-  //     property_id INT PRIMARY KEY,
-
-  //     -- When the promotion starts and ends
-  //     start_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-  //     end_date DATETIME NOT NULL,
-
-  //     -- Total paid for this specific promotion cycle
-  //     amount_paid DECIMAL(10,2),
-
-  //     -- Status to easily toggle without deleting the record
-  //     is_active BOOLEAN DEFAULT FALSE,
-  //     is_paid BOOLEAN DEFAULT FALSE,
-  //     payment_ref VARCHAR(255) DEFAULT NULL,
-
-  //     FOREIGN KEY (property_id) REFERENCES property(property_id) ON DELETE CASCADE
-  // );`;
   const sponserdTable = `CREATE TABLE IF NOT EXISTS sponsored_listings (
     promotion_id INT AUTO_INCREMENT PRIMARY KEY, -- Unique ID for every purchase
     property_id INT NOT NULL, 
@@ -291,6 +273,19 @@ CREATE TABLE IF NOT EXISTS users (
     payment_ref VARCHAR(255) DEFAULT NULL,
 
     FOREIGN KEY (property_id) REFERENCES property(property_id) ON DELETE CASCADE
+);`;
+
+  const reviewsTable = `CREATE TABLE IF NOT EXISTS reviews (
+    review_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    user_id CHAR(36) NOT NULL,
+    property_id INT NOT NULL,
+    rent_id CHAR(36) DEFAULT NULL,
+    rating DECIMAL(2, 1) NOT NULL,
+    phrase TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (property_id) REFERENCES property(property_id) ON DELETE CASCADE,
+    FOREIGN KEY (rent_id) REFERENCES lease(lease_id) ON DELETE SET NULL
 );`;
   // --- Execution Logic ---
 
@@ -380,6 +375,7 @@ CREATE TABLE IF NOT EXISTS users (
         { name: "Messages", sql: messagesTable },
         { name: "Listing Subscriptions", sql: listingSubscriptionsTable },
         { name: "Sponser Listing", sql: sponserdTable },
+        { name: "reviews", sql: reviewsTable },
       ];
       dependentTables.forEach((table) => {
         connection.query(table.sql, (err) => {
