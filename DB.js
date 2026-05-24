@@ -260,6 +260,19 @@ CREATE TABLE IF NOT EXISTS Users (
     FOREIGN KEY (chat_id) REFERENCES Chats(chat_id) ON DELETE CASCADE,
     FOREIGN KEY (sender_id) REFERENCES Users(user_id) ON DELETE CASCADE
 );`;
+
+  const reviewsTable = `CREATE TABLE IF NOT EXISTS reviews (
+    review_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    user_id CHAR(36) NOT NULL,
+    property_id INT NOT NULL,
+    rent_id CHAR(36) DEFAULT NULL,
+    rating DECIMAL(2, 1) NOT NULL,
+    phrase TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (property_id) REFERENCES Property(property_id) ON DELETE CASCADE,
+    FOREIGN KEY (rent_id) REFERENCES Lease(lease_id) ON DELETE SET NULL
+);`;
   // --- Execution Logic ---
 
   connection.query(adminsTable, async (err) => {
@@ -347,6 +360,7 @@ CREATE TABLE IF NOT EXISTS Users (
         { name: "Chats", sql: chatTable },
         { name: "Messages", sql: messagesTable },
         { name: "Listing Subscriptions", sql: listingSubscriptionsTable },
+        { name: "reviews", sql: reviewsTable },
       ];
       dependentTables.forEach((table) => {
         connection.query(table.sql, (err) => {
