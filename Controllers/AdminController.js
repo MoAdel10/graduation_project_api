@@ -14,7 +14,7 @@ const createAdmin = async (req, res) => {
 
     const hashed = await bcrypt.hash(password, 10);
 
-    const sql = `INSERT INTO Admins (email, password, role) VALUES (?, ?, 'admin')`;
+    const sql = `INSERT INTO admins (email, password, role) VALUES (?, ?, 'admin')`;
 
     connection.query(sql, [email, hashed], (err) => {
       if (err) return res.status(500).json({ msg: "DB error", err });
@@ -29,7 +29,7 @@ const createAdmin = async (req, res) => {
 const loginAdmin = (req, res) => {
   const { email, password } = req.body;
 
-  const sql = `SELECT * FROM Admins WHERE email = ?`;
+  const sql = `SELECT * FROM admins WHERE email = ?`;
 
   connection.query(sql, [email], async (err, result) => {
     if (err) return res.render("admin/login", { error: "Database error" });

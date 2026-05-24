@@ -64,24 +64,32 @@ class ChatSystem {
     });
   }
 
-  async sendMessage(chat_id, sender_id, receiver_id, content) {
+  async sendMessage(chat_id, sender_id, receiver_id, property_id, content) {
     return new Promise((resolve, reject) => {
-      const sql = `INSERT INTO Messages (chat_id, sender_id, content) VALUES (?, ?, ?)`;
-      this.db.query(sql, [chat_id, sender_id, content], (err, res) => {
-        if (err) return reject(err);
+      const sql = `INSERT INTO Messages (chat_id, sender_id, property_id, content) VALUES (?, ?,?, ?)`;
+      this.db.query(
+        sql,
+        [chat_id, sender_id, property_id, content],
+        (err, res) => {
+          if (err) return reject(err);
 
-        const payload = {
-          chat_id,
-          sender_id,
-          content,
-          created_at: new Date(),
-        };
+          const payload = {
+            chat_id,
+            sender_id,
+            property_id,
+            content,
+            created_at: new Date(),
+          };
 
-        // Emit to both parties in their private rooms
-        this.io.to(sender_id).to(receiver_id).emit("new_chat_message", payload);
+          // Emit to both parties in their private rooms
+          this.io
+            .to(sender_id)
+            .to(receiver_id)
+            .emit("new_chat_message", payload);
 
-        resolve(payload);
-      });
+          resolve(payload);
+        },
+      );
     });
   }
 }

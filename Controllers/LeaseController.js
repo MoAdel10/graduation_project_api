@@ -3,7 +3,7 @@ const connection = require("../DB");
 const getLeasesAsRenter = (req, res) => {
   const renterId = req.user.userId;
 
-  const sql = "SELECT * FROM Lease WHERE renter_id = ? ORDER BY check_in_date DESC";
+  const sql = "SELECT * FROM lease WHERE renter_id = ? ORDER BY check_in_date DESC";
 
   connection.query(sql, [renterId], (err, results) => {
     if (err) {
@@ -17,7 +17,7 @@ const getLeasesAsRenter = (req, res) => {
 const getLeasesAsOwner = (req, res) => {
   const ownerId = req.user.userId;
 
-  const sql = "SELECT * FROM Lease WHERE owner_id = ? ORDER BY check_in_date DESC";
+  const sql = "SELECT * FROM lease WHERE owner_id = ? ORDER BY check_in_date DESC";
 
   connection.query(sql, [ownerId], (err, results) => {
     if (err) {
@@ -32,7 +32,7 @@ const getLeaseById = (req, res) => {
   const { leaseId } = req.params;
   const userId = req.user.userId;
 
-  const sql = "SELECT * FROM Lease WHERE lease_id = ?";
+  const sql = "SELECT * FROM lease WHERE lease_id = ?";
 
   connection.query(sql, [leaseId], (err, results) => {
     if (err) {

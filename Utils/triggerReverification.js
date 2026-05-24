@@ -3,7 +3,7 @@ const triggerReverification = (connection, propertyId, userId, callback) => {
     if (err) return callback(err);
 
     // Fetch the property_type first to determine default status and availability
-    connection.query("SELECT property_type FROM Property WHERE property_id = ?", [propertyId], (err, results) => {
+    connection.query("SELECT property_type FROM property WHERE property_id = ?", [propertyId], (err, results) => {
       if (err) return connection.rollback(() => callback(err));
       
       const propertyType = results[0]?.property_type || 'for_rent';
@@ -14,7 +14,7 @@ const triggerReverification = (connection, propertyId, userId, callback) => {
       const isAvailable = isRent ? 1 : 0;
       
       const updateSql = `
-        UPDATE Property 
+        UPDATE property 
         SET is_verified = FALSE, is_available = ?, listing_status = ? 
         WHERE property_id = ?
       `;
@@ -23,7 +23,7 @@ const triggerReverification = (connection, propertyId, userId, callback) => {
         if (err) return connection.rollback(() => callback(err));
 
         const requestSql = `
-          INSERT INTO VerificationRequests (property_id, user_id, status) 
+          INSERT INTO verificationrequests (property_id, user_id, status) 
           VALUES (?, ?, 'pending')
         `;
 

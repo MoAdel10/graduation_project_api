@@ -2,9 +2,10 @@ require('dotenv').config();
 const cron = require('node-cron');
 
 //Hosts Array
-const HOSTS = [
-    'http://localhost:8000',
-];
+const raw_host_env = process.env.SENTINEL_HOSTS
+
+const HOSTS = raw_host_env.split(",") || "http://localhost:8000"
+console.log(HOSTS);
 
 const SECRET = process.env.SENTINEL_SECRET;
 
@@ -12,10 +13,10 @@ console.log(`Sentinel Active. Monitoring ${HOSTS.length} hosts...`);
 
 
 
-// 0 * * * *for houre 
-// */30 * * * * * for 30 seconds
+// 0 * * * *for houre (production :D)
+// */30 * * * * * for 30 seconds (for testing only ya ged3aaan :c)
 // Schedule: Runs at 00:01 every day
-cron.schedule('0 * * * *', async () => {
+cron.schedule('*/30 * * * * *', async () => {
     console.log(`Heartbeat Start: ${new Date().toLocaleString()}`);
 
     // 2. Map the hosts into a list of fetch promises

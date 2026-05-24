@@ -50,26 +50,25 @@ router.get("/admin/verification/requests", adminAuth, async (req, res) => {
 // Create Admin (API)
 router.post("/admin/create", adminAuth, isSuperAdmin, createAdmin);
 
-router.get("/admin/properties/view/details/:property_id", adminAuth, async (req, res) => {
+router.get(
+  "/admin/properties/view/details/:property_id",
+  adminAuth,
+  async (req, res) => {
     try {
-        const { property_id } = req.params;
-        
-        // Fetch property details
-        const results = await getProperty(property_id); // Your existing getProperty(id) function
+      const { property_id } = req.params;
 
-        if (results.length === 0) {
-            return res.status(404).send("Property not found");
-        }
+      // Fetch property details
+      const results = await getProperty(property_id); // Your existing getProperty(id) function
 
-        const property = results[0];
+      if (results.length === 0) {
+        return res.status(404).send("Property not found");
+      }
 
-        // Parse JSON for images and proofs
-        property.images = typeof property.images === 'string' ? JSON.parse(property.images) : property.images;
-        property.ownership_proofs = typeof property.ownership_proofs === 'string' ? JSON.parse(property.ownership_proofs) : property.ownership_proofs;
+      const property = results[0];
 
         // Check if there's a pending request for this property to show the Approve/Reject buttons
         connection.query(
-            "SELECT request_id FROM VerificationRequests WHERE property_id = ? AND status = 'pending' LIMIT 1",
+            "SELECT request_id FROM verificationrequests WHERE property_id = ? AND status = 'pending' LIMIT 1",
             [property_id],
             (err, requestResults) => {
                 const request_id = requestResults.length > 0 ? requestResults[0].request_id : null;
@@ -82,17 +81,18 @@ router.get("/admin/properties/view/details/:property_id", adminAuth, async (req,
             }
         );
     } catch (error) {
-        console.error(error);
-        res.status(500).send("Error loading property");
+      console.error(error);
+      res.status(500).send("Error loading property");
     }
-});
+  },
+);
 
 router.get("/admin/properties/view/:id", adminAuth, async (req, res) => {
   try {
     const results = await getProperty(req.params.id);
 
     if (results.length === 0) {
-      return res.status(404).send("Property not found");
+      return res.status(404).send("property not found");
     }
 
     const property = results[0];
@@ -117,6 +117,7 @@ router.post(
   async (req, res) => {
     const { request_id } = req.params;
     const admin_id = req.admin.admin_id;
+    const notifier = req.app.get("notifier");
 
     connection.beginTransaction(async (err) => {
       if (err) return res.status(500).send("Transaction Error");
@@ -124,7 +125,7 @@ router.post(
       try {
         const [request] = await new Promise((resolve, reject) => {
           connection.query(
-            "SELECT property_id FROM VerificationRequests WHERE request_id = ?",
+            "SELECT property_id FROM verificationrequests WHERE request_id = ?",
             [request_id],
             (e, r) => (e ? reject(e) : resolve(r)),
           );
@@ -135,7 +136,7 @@ router.post(
 
         await new Promise((resolve, reject) => {
           connection.query(
-            "UPDATE Property SET is_verified = 1, is_available = 1 WHERE property_id = ?",
+            "UPDATE property SET is_verified = 1, is_available = 1 WHERE property_id = ?",
             [property_id],
             (e) => (e ? reject(e) : resolve()),
           );
@@ -143,7 +144,7 @@ router.post(
 
         await new Promise((resolve, reject) => {
           connection.query(
-            "UPDATE VerificationRequests SET status = 'approved', admin_id = ? WHERE request_id = ?",
+            "UPDATE verificationrequests SET status = 'approved', admin_id = ? WHERE request_id = ?",
             [admin_id, request_id],
             (e) => (e ? reject(e) : resolve()),
           );
@@ -151,7 +152,7 @@ router.post(
 
         await new Promise((resolve, reject) => {
           connection.query(
-            "UPDATE VerificationRequests SET status = 'rejected', rejection_reason = 'Superseded by newer approval' WHERE property_id = ? AND status = 'pending' AND request_id != ?",
+            "UPDATE verificationrequests SET status = 'rejected', rejection_reason = 'Superseded by newer approval' WHERE property_id = ? AND status = 'pending' AND request_id != ?",
             [property_id, request_id],
             (e) => (e ? reject(e) : resolve()),
           );
@@ -162,6 +163,12 @@ router.post(
             return connection.rollback(() => {
               throw err;
             });
+          notifier.send({
+            receiver: request.user_id,
+            type: "property_acception",
+            title: `Congrats Your property`,
+            body: `You can now start renting`,
+          });
           res.redirect("/admin/verification/requests");
         });
       } catch (error) {
@@ -174,18 +181,22 @@ router.post(
   },
 );
 
-router.post("/admin/verification/reject/:request_id", adminAuth, async (req, res) => {
+router.post(
+  "/admin/verification/reject/:request_id",
+  adminAuth,
+  async (req, res) => {
     const { request_id } = req.params;
     const { reason } = req.body;
     const admin_id = req.admin.admin_id;
+    const notifier = req.app.get("notifier");
 
     connection.beginTransaction(async (err) => {
-        if (err) return res.status(500).send("Transaction Error");
+      if (err) return res.status(500).send("Transaction Error");
 
         try {
             const [request] = await new Promise((resolve, reject) => {
                 connection.query(
-                    "SELECT property_id FROM VerificationRequests WHERE request_id = ?",
+                    "SELECT property_id FROM verificationrequests WHERE request_id = ?",
                     [request_id],
                     (e, r) => (e ? reject(e) : resolve(r))
                 );
@@ -197,7 +208,7 @@ router.post("/admin/verification/reject/:request_id", adminAuth, async (req, res
            
             await new Promise((resolve, reject) => {
                 connection.query(
-                    "UPDATE Property SET is_verified = 0 , is_available = 0 WHERE property_id = ?",
+                    "UPDATE property SET is_verified = 0 , is_available = 0 WHERE property_id = ?",
                     [property_id],
                     (e) => (e ? reject(e) : resolve())
                 );
@@ -208,7 +219,7 @@ router.post("/admin/verification/reject/:request_id", adminAuth, async (req, res
 
             await new Promise((resolve, reject) => {
                 connection.query(
-                    "UPDATE VerificationRequests SET status = 'rejected', rejection_reason = ?, admin_id = ? WHERE request_id = ?",
+                    "UPDATE verificationrequests SET status = 'rejected', rejection_reason = ?, admin_id = ? WHERE request_id = ?",
                     [reason, admin_id, request_id],
                     (e) => (e ? reject(e) : resolve())
                 );
@@ -217,7 +228,7 @@ router.post("/admin/verification/reject/:request_id", adminAuth, async (req, res
            
             await new Promise((resolve, reject) => {
                 connection.query(
-                    "UPDATE VerificationRequests SET status = 'rejected', rejection_reason = ? WHERE property_id = ? AND status = 'pending' AND request_id != ?",
+                    "UPDATE verificationrequests SET status = 'rejected', rejection_reason = ? WHERE property_id = ? AND status = 'pending' AND request_id != ?",
                     [`Rejected alongside request ${request_id}: ${reason}`, property_id, request_id],
                     (e) => (e ? reject(e) : resolve())
                 );
@@ -235,6 +246,7 @@ router.post("/admin/verification/reject/:request_id", adminAuth, async (req, res
             });
         }
     });
-});
+  },
+);
 
 module.exports = router;

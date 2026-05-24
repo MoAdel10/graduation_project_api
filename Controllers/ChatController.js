@@ -2,39 +2,54 @@ const connection = require("../DB");
 
 const sendChatMessage = async (req, res) => {
   const { receiver_id, property_id, content } = req.body;
-  const sender_id = req.user?.userId; 
-
+  const sender_id = req.user?.userId;
 
   if (!sender_id || !receiver_id || !property_id) {
-    return res.status(400).json({ 
-      status: "error", 
-      message: "Missing required fields: receiver_id, property_id, or user authentication." 
+    return res.status(400).json({
+      status: "error",
+      message:
+        "Missing required fields: receiver_id, property_id, or user authentication.",
     });
   }
 
   const chatManager = req.app.get("chatManager");
 
   try {
-    const chat_id = await chatManager.getOrCreateChat(receiver_id, sender_id, property_id);
+    const chat_id = await chatManager.getOrCreateChat(
+      receiver_id,
+      sender_id,
+      property_id,
+    );
 
     // Save and Emit message
-    const message = await chatManager.sendMessage(chat_id, sender_id, receiver_id, content);
+    const message = await chatManager.sendMessage(
+      chat_id,
+      sender_id,
+      receiver_id,
+      property_id,
+      content,
+    );
 
     res.status(200).json({ status: "success", data: message });
   } catch (error) {
     console.error("❌ Chat Controller Error:", error);
-    res.status(500).json({ status: "error", message: error.sqlMessage || "Failed to send message" });
+    res
+      .status(500)
+      .json({
+        status: "error",
+        message: error.sqlMessage || "Failed to send message",
+      });
   }
 };
-
-
 
 // Get all conversations for the logged-in user (Inbox)
 const getInbox = async (req, res) => {
   const userId = req.user?.userId;
 
   if (!userId) {
-    return res.status(401).json({ status: "error", message: "User not authenticated." });
+    return res
+      .status(401)
+      .json({ status: "error", message: "User not authenticated." });
   }
 
   const sql = `
@@ -46,12 +61,12 @@ const getInbox = async (req, res) => {
       u.user_id AS partner_id,
       m.content AS last_message,
       m.created_at AS last_message_time,
-      (SELECT COUNT(*) FROM Messages WHERE chat_id = c.chat_id AND is_read = 0 AND sender_id != ?) AS unread_count
-    FROM Chats c
-    JOIN Property p ON c.property_id = p.property_id
-    JOIN Users u ON u.user_id = IF(c.owner_id = ?, c.renter_id, c.owner_id)
-    LEFT JOIN Messages m ON m.message_id = (
-      SELECT message_id FROM Messages 
+      (SELECT COUNT(*) FROM messages WHERE chat_id = c.chat_id AND is_read = 0 AND sender_id != ?) AS unread_count
+    FROM chats c
+    JOIN property p ON c.property_id = p.property_id
+    JOIN users u ON u.user_id = IF(c.owner_id = ?, c.renter_id, c.owner_id)
+    LEFT JOIN messages m ON m.message_id = (
+      SELECT message_id FROM messages 
       WHERE chat_id = c.chat_id 
       ORDER BY created_at DESC LIMIT 1
     )
@@ -63,13 +78,17 @@ const getInbox = async (req, res) => {
     connection.query(sql, [userId, userId, userId, userId], (err, results) => {
       if (err) {
         console.error("❌ SQL Query Error:", err);
-        return res.status(500).json({ status: "error", message: "Database query failed." });
+        return res
+          .status(500)
+          .json({ status: "error", message: "Database query failed." });
       }
       res.status(200).json({ status: "success", data: results });
     });
   } catch (error) {
     console.error("❌ Inbox Error:", error);
-    res.status(500).json({ status: "error", message: "Failed to fetch inbox." });
+    res
+      .status(500)
+      .json({ status: "error", message: "Failed to fetch inbox." });
   }
 };
 
@@ -79,12 +98,14 @@ const getChatHistory = async (req, res) => {
   const userId = req.user?.userId;
 
   if (!chat_id || !userId) {
-    return res.status(400).json({ status: "error", message: "Missing chat ID or authentication." });
+    return res
+      .status(400)
+      .json({ status: "error", message: "Missing chat ID or authentication." });
   }
 
   const sql = `
     SELECT message_id, sender_id, content, is_read, created_at 
-    FROM Messages 
+    FROM messages 
     WHERE chat_id = ? 
     ORDER BY created_at ASC
   `;
@@ -96,7 +117,9 @@ const getChatHistory = async (req, res) => {
     });
   } catch (error) {
     console.error("❌ History Error:", error);
-    res.status(500).json({ status: "error", message: "Failed to fetch chat history." });
+    res
+      .status(500)
+      .json({ status: "error", message: "Failed to fetch chat history." });
   }
 };
 
@@ -106,27 +129,32 @@ const markAsRead = async (req, res) => {
   const userId = req.user?.userId;
 
   if (!chat_id || !userId) {
-    return res.status(400).json({ status: "error", message: "Missing required information." });
+    return res
+      .status(400)
+      .json({ status: "error", message: "Missing required information." });
   }
 
   // Mark messages as read ONLY if the current user is the receiver (sender_id != userId)
-  const sql = `UPDATE Messages SET is_read = 1 WHERE chat_id = ? AND sender_id != ?`;
+  const sql = `UPDATE messages SET is_read = 1 WHERE chat_id = ? AND sender_id != ?`;
 
   try {
     connection.query(sql, [chat_id, userId], (err, result) => {
       if (err) throw err;
-      res.status(200).json({ status: "success", message: "Messages marked as read." });
+      res
+        .status(200)
+        .json({ status: "success", message: "Messages marked as read." });
     });
   } catch (error) {
     console.error("❌ MarkRead Error:", error);
-    res.status(500).json({ status: "error", message: "Failed to update read status." });
+    res
+      .status(500)
+      .json({ status: "error", message: "Failed to update read status." });
   }
 };
 
-module.exports = { 
-  sendChatMessage, 
-  getInbox, 
-  getChatHistory, 
-  markAsRead 
+module.exports = {
+  sendChatMessage,
+  getInbox,
+  getChatHistory,
+  markAsRead,
 };
-

@@ -8,7 +8,7 @@ const checkVerification = (req, res) => {
   if (!id) return res.status(400).json({ msg: "Error: id is needed" });
 
   connection.query(
-    "SELECT is_verified FROM Property WHERE property_id = ?",
+    "SELECT is_verified FROM property WHERE property_id = ?",
     [id],
     (err, result) => {
       if (err) return res.status(500).json({ msg: "Database error" });
@@ -33,7 +33,7 @@ const resolveVerification = (req, res) => {
 
     // Step A: Update history/request table
     const sqlRequest = `
-      UPDATE VerificationRequests 
+      UPDATE verificationrequests 
       SET status = ?, rejection_reason = ?, admin_id = ? 
       WHERE request_id = ?
     `;
@@ -42,7 +42,7 @@ const resolveVerification = (req, res) => {
       if (err) return connection.rollback(() => res.status(500).json({ msg: "Failed to update request" }));
 
       // Step B: Get the property_id linked to this request
-      connection.query("SELECT property_id FROM VerificationRequests WHERE request_id = ?", [id], (err, rows) => {
+      connection.query("SELECT property_id FROM verificationrequests WHERE request_id = ?", [id], (err, rows) => {
         if (err || rows.length === 0) {
           return connection.rollback(() => res.status(404).json({ msg: "Request not found" }));
         }
@@ -51,7 +51,7 @@ const resolveVerification = (req, res) => {
         const isVerified = (status === 'approved' ? 1 : 0);
 
         // Step C: Update the actual Property status
-        connection.query("UPDATE Property SET is_verified = ? WHERE property_id = ?", [isVerified, propertyId], (err) => {
+        connection.query("UPDATE property SET is_verified = ? WHERE property_id = ?", [isVerified, propertyId], (err) => {
           if (err) return connection.rollback(() => res.status(500).json({ msg: "Failed to update property" }));
 
           connection.commit((err) => {

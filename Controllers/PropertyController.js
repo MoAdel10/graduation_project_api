@@ -109,7 +109,7 @@ if (
   }
 
 const sql = `
-  INSERT INTO Property (
+  INSERT INTO property (
     owner_id,
     property_name,
     property_desc,
@@ -179,13 +179,13 @@ const values = [
 
         if (property_type === 'for_sale') {
           res.status(201).json({
-            msg: "Property added. Please pay the listing fee to activate it.",
+            msg: "property added. Please pay the listing fee to activate it.",
             propertyId: newPropertyId,
             subscriptionId: subscriptionId
           });
         } else {
           res.status(201).json({
-            msg: "Property added successfully",
+            msg: "property added successfully",
             propertyId: newPropertyId,
           });
         }
@@ -194,7 +194,7 @@ const values = [
 
     if (property_type === 'for_sale') {
       subscriptionId = crypto.randomUUID();
-      const insertSubSql = `INSERT INTO ListingSubscriptions (subscription_id, property_id, owner_id, plan_months, amount) VALUES (?, ?, ?, ?, ?)`;
+      const insertSubSql = `INSERT INTO listingsubscriptions (subscription_id, property_id, owner_id, plan_months, amount) VALUES (?, ?, ?, ?, ?)`;
       connection.query(insertSubSql, [subscriptionId, newPropertyId, req.user.userId, planMonths, listingAmount], (subErr) => {
         if (subErr) {
           console.error("❌ Error inserting subscription:", subErr);
@@ -214,7 +214,7 @@ const getProperties = (req, res) => {
   // http://localhost:8000/property?minPrice=20 methal 3shan barghout maysara54  (ma fuck barghout ya 3am (sarhan))
 
   // Base SQL query
-  let sql = "SELECT * FROM Property WHERE 1=1";
+  let sql = "SELECT * FROM property WHERE 1=1";
   const params = [];
 
   // Add filters dynamically
@@ -281,8 +281,8 @@ const getPropertyById = (req, res) => {
       u.first_name AS owner_first_name,
       u.second_name AS owner_second_name,
       u.email AS owner_email
-    FROM Property p
-    LEFT JOIN Users u ON p.owner_id = u.user_id
+    FROM property p
+    LEFT JOIN users u ON p.owner_id = u.user_id
     WHERE p.property_id = ?
   `;
 
@@ -293,7 +293,7 @@ const getPropertyById = (req, res) => {
     }
 
     if (results.length === 0) {
-      return res.status(404).json({ msg: "Property not found" });
+      return res.status(404).json({ msg: "property not found" });
     }
 
     const property = results[0];
@@ -326,21 +326,21 @@ const editPropertyInfo = (req, res) => {
   // Verify ownership
   
   connection.query(
-    "SELECT * FROM Property WHERE property_id = ?",
+    "SELECT * FROM property WHERE property_id = ?",
     [id],
     (err, results) => {
       if (err) {
         return res.status(500).json({ msg: "Database error"});
       }
       if (results.length === 0)
-        return res.status(404).json({ msg: "Property not found" });
+        return res.status(404).json({ msg: "property not found" });
 
       const property = results[0];
       if (property.owner_id !== userId)
         return res.status(403).json({ msg: "Unauthorized" });
 
       const sql = `
-        UPDATE Property SET
+        UPDATE property SET
           property_name = ?,
           property_desc = ?,
           location = ?,
@@ -377,7 +377,7 @@ const editPropertyInfo = (req, res) => {
               .json({ msg: "Failed to trigger re-verification" });
 
           res.status(200).json({
-            msg: "✅ Info updated. Property is now pending re-verification.",
+            msg: "✅ Info updated. property is now pending re-verification.",
           });
         });
       });
@@ -404,12 +404,12 @@ const editPropertyImages = (req, res) => {
 
   // Fetch the property to verify ownership
   connection.query(
-    "SELECT * FROM Property WHERE property_id = ?",
+    "SELECT * FROM property WHERE property_id = ?",
     [id],
     (err, results) => {
       if (err) return res.status(500).json({ msg: "Database error" });
       if (results.length === 0)
-        return res.status(404).json({ msg: "Property not found" });
+        return res.status(404).json({ msg: "property not found" });
 
       const property = results[0];
       if (property.owner_id !== userId)
@@ -451,7 +451,7 @@ const editPropertyImages = (req, res) => {
 
       // Update the database
       const sql = `
-      UPDATE Property SET
+      UPDATE property SET
         images = ?,
         ownership_proofs = ?
       WHERE property_id = ?
@@ -473,7 +473,7 @@ const editPropertyImages = (req, res) => {
               .json({ msg: "Failed to trigger re-verification" });
 
           res.status(200).json({
-            msg: "✅ Property images updated successfully",
+            msg: "✅ property images updated successfully",
             images: updatedImages,
             ownershipProofs: updatedProofs,
           });
@@ -489,12 +489,12 @@ const deleteProperty = (req, res) => {
 
   // Fetch the property first to verify ownership
   connection.query(
-    "SELECT * FROM Property WHERE property_id = ?",
+    "SELECT * FROM property WHERE property_id = ?",
     [id],
     (err, results) => {
       if (err) return res.status(500).json({ msg: "Database error" }); // 500 for DB or unexpected errors
       if (results.length === 0)
-        return res.status(404).json({ msg: "Property not found" }); // 404 if property doesn’t exist
+        return res.status(404).json({ msg: "property not found" }); // 404 if property doesn’t exist
 
       const property = results[0];
 
@@ -522,11 +522,11 @@ const deleteProperty = (req, res) => {
 
       // Delete the property from the database
       connection.query(
-        "DELETE FROM Property WHERE property_id = ?",
+        "DELETE FROM property WHERE property_id = ?",
         [id],
         (err) => {
           if (err) return res.status(500).json({ msg: "Database error" });
-          res.status(200).json({ msg: "✅ Property deleted successfully" }); // 200 if deletion succeeds
+          res.status(200).json({ msg: "✅ property deleted successfully" }); // 200 if deletion succeeds
         },
       );
     },
@@ -557,7 +557,7 @@ const getMyProperty = (req, res) => {
       bedrooms_no,
       beds_no,
       bathrooms_no
-    FROM Property 
+    FROM property 
     WHERE owner_id = ?
     ORDER BY property_id DESC
   `;
