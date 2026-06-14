@@ -12,12 +12,6 @@ services:
       - "33066:3306"
     volumes:
       - aqar_db_data:/var/lib/mysql
-    # 💥 Healthcheck to ensure MySQL is fully initialized before others connect
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$DB_PASSWORD"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
 
   aqar-api:
     build:
@@ -39,14 +33,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-    # 🔄 Force the API to wait until the DB healthcheck passes successfully
     depends_on:
-      db:
-        condition: service_healthy
+      - db
     volumes:
       - aqar_uploads:/app/uploads
     restart: unless-stopped
-
   sentinel:
     build:
       context: .
@@ -55,10 +46,8 @@ services:
     container_name: aqar_sentinel
     command: ["npm","run","watch"]
     env_file: .env.test
-    # 🔄 Force sentinel to wait for a healthy database as well
-    depends_on:
-      db:
-        condition: service_healthy
+
+
 
 volumes:
   aqar_db_data:
