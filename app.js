@@ -25,7 +25,7 @@ const chatManager = new ChatSystem(io, connection);
 
 // App Settings
 app.set("view engine", "ejs");
-app.set("views", "view");
+app.set("views", "View");
 app.set("notifier", notifier);
 app.set("chatManager", chatManager);
 
