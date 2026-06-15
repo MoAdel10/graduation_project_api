@@ -12,6 +12,12 @@ services:
       - "33066:3306"
     volumes:
       - aqar_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-padmin"]
+      timeout: 5s
+      retries: 10
+      interval: 10s
+      start_period: 30s
 
   aqar-api:
     build:
@@ -27,17 +33,18 @@ services:
       - DB_HOST=db
       - DB_PORT=3306
     healthcheck:
-      # Pings the root route of your express app
       test: ["CMD", "curl", "-f", "http://localhost:8000/test-db"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
     depends_on:
-      - db
+      db:
+        condition: service_healthy  # Wait for DB to be healthy, not just started
     volumes:
       - aqar_uploads:/app/uploads
     restart: unless-stopped
+    
   sentinel:
     build:
       context: .
@@ -46,8 +53,11 @@ services:
     container_name: aqar_sentinel
     command: ["npm","run","watch"]
     env_file: .env.test
-
-
+    depends_on:
+      db:
+        condition: service_healthy  # Also wait for DB
+      aqar-api:
+        condition: service_started
 
 volumes:
   aqar_db_data:
