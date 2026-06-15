@@ -9,7 +9,7 @@ class NotificationSystem {
     const metadataString = metadata ? JSON.stringify(metadata) : null;
 
     const sql = `
-      INSERT INTO Notifications 
+      INSERT INTO notifications 
       (sender, receiver, event_type, notification_title, notification_body, metadata) 
       VALUES (?, ?, ?, ?, ?, ?)
     `;
