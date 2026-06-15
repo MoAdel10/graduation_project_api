@@ -31,7 +31,18 @@ app.set("chatManager", chatManager);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cors());
+// app.use(cors());
+
+app.use(cors({
+  origin: [
+    'https://aqar-tan.vercel.app', // Your Vercel frontend
+    'http://localhost:5173',       // Local frontend testing
+    'http://localhost:3000'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning'],
+  credentials: true
+}));
 app.use(cookieParser());
 app.use("/uploads", express.static("uploads"));
 
