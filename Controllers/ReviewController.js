@@ -20,7 +20,7 @@ const getReviews = (req, res) => {
       u.second_name,
       u.email
     FROM reviews r
-    JOIN Users u ON r.user_id = u.user_id
+    JOIN users u ON r.user_id = u.user_id
   `;
   const params = [];
 
@@ -75,7 +75,7 @@ const addReview = (req, res) => {
 
       // Automatically recalculate and update Property rating
       const updateRateSql = `
-        UPDATE Property 
+        UPDATE property 
         SET rate = (SELECT AVG(rating) FROM reviews WHERE property_id = ?) 
         WHERE property_id = ?
       `;
@@ -95,7 +95,7 @@ const addReview = (req, res) => {
   if (targetRentId) {
     // Verify that the lease exists, belongs to this renter, and get the property_id
     connection.query(
-      "SELECT property_id, status FROM Lease WHERE lease_id = ? AND renter_id = ?",
+      "SELECT property_id, status FROM lease WHERE lease_id = ? AND renter_id = ?",
       [targetRentId, userId],
       (leaseErr, leaseRows) => {
         if (leaseErr) {
@@ -116,7 +116,7 @@ const addReview = (req, res) => {
   } else {
     // Just property_id provided, verify property exists
     connection.query(
-      "SELECT property_id FROM Property WHERE property_id = ?",
+      "SELECT property_id FROM property WHERE property_id = ?",
       [property_id],
       (propErr, propRows) => {
         if (propErr) {

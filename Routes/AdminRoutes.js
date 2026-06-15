@@ -125,7 +125,7 @@ router.post(
       try {
         const [request] = await new Promise((resolve, reject) => {
           connection.query(
-            "SELECT property_id FROM verificationrequests WHERE request_id = ?",
+            "SELECT property_id,user_id FROM verificationrequests WHERE request_id = ?",
             [request_id],
             (e, r) => (e ? reject(e) : resolve(r)),
           );
@@ -193,58 +193,65 @@ router.post(
     connection.beginTransaction(async (err) => {
       if (err) return res.status(500).send("Transaction Error");
 
-        try {
-            const [request] = await new Promise((resolve, reject) => {
-                connection.query(
-                    "SELECT property_id FROM verificationrequests WHERE request_id = ?",
-                    [request_id],
-                    (e, r) => (e ? reject(e) : resolve(r))
-                );
-            });
+      try {
+        // 🌟 FIX: Added user_id to the SELECT query so the notification system has a receiver
+        const [request] = await new Promise((resolve, reject) => {
+          connection.query(
+            "SELECT property_id, user_id FROM verificationrequests WHERE request_id = ?",
+            [request_id],
+            (e, r) => (e ? reject(e) : resolve(r))
+          );
+        });
 
-            if (!request) throw new Error("Request not found");
-            const property_id = request.property_id;
+        if (!request) throw new Error("Request not found");
+        const property_id = request.property_id;
 
-           
-            await new Promise((resolve, reject) => {
-                connection.query(
-                    "UPDATE property SET is_verified = 0 , is_available = 0 WHERE property_id = ?",
-                    [property_id],
-                    (e) => (e ? reject(e) : resolve())
-                );
-            });
+        await new Promise((resolve, reject) => {
+          connection.query(
+            "UPDATE property SET is_verified = 0 , is_available = 0 WHERE property_id = ?",
+            [property_id],
+            (e) => (e ? reject(e) : resolve())
+          );
+        });
 
-            console.log("REJECTED");
-            
+        console.log("REJECTED");
 
-            await new Promise((resolve, reject) => {
-                connection.query(
-                    "UPDATE verificationrequests SET status = 'rejected', rejection_reason = ?, admin_id = ? WHERE request_id = ?",
-                    [reason, admin_id, request_id],
-                    (e) => (e ? reject(e) : resolve())
-                );
-            });
+        await new Promise((resolve, reject) => {
+          connection.query(
+            "UPDATE verificationrequests SET status = 'rejected', rejection_reason = ?, admin_id = ? WHERE request_id = ?",
+            [reason, admin_id, request_id],
+            (e) => (e ? reject(e) : resolve())
+          );
+        });
 
-           
-            await new Promise((resolve, reject) => {
-                connection.query(
-                    "UPDATE verificationrequests SET status = 'rejected', rejection_reason = ? WHERE property_id = ? AND status = 'pending' AND request_id != ?",
-                    [`Rejected alongside request ${request_id}: ${reason}`, property_id, request_id],
-                    (e) => (e ? reject(e) : resolve())
-                );
-            });
+        await new Promise((resolve, reject) => {
+          connection.query(
+            "UPDATE verificationrequests SET status = 'rejected', rejection_reason = ? WHERE property_id = ? AND status = 'pending' AND request_id != ?",
+            [`Rejected alongside request ${request_id}: ${reason}`, property_id, request_id],
+            (e) => (e ? reject(e) : resolve())
+          );
+        });
 
-            connection.commit((err) => {
-                if (err) return connection.rollback(() => { throw err; });
-                res.redirect("/admin/verification/requests");
-            });
+        connection.commit((err) => {
+          if (err) return connection.rollback(() => { throw err; });
 
-        } catch (error) {
-            connection.rollback(() => {
-                console.error("❌ Rejection Error:", error);
-                res.status(500).send("Server Error during rejection");
-            });
-        }
+          // 🌟 NEW: Send the rejection notification after a successful DB commit
+          notifier.send({
+            receiver: request.user_id,
+            type: "property_rejection",
+            title: "Property Verification Declined",
+            body: `Your property listing verification request was rejected. Reason: ${reason || 'No specific reason provided.'}`,
+          });
+
+          res.redirect("/admin/verification/requests");
+        });
+
+      } catch (error) {
+        connection.rollback(() => {
+          console.error("❌ Rejection Error:", error);
+          res.status(500).send("Server Error during rejection");
+        });
+      }
     });
   },
 );
