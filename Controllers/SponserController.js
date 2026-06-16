@@ -104,8 +104,114 @@ const SendPromotionRequest = async (req, res) => {
   );
 };
 
+const connection = require("../DB");
+require("dotenv").config();
+const crypto = require("crypto");
+const _ = require("underscore");
+const queryString = require("query-string");
+
+const {
+  KashierPaymentService,
+} = require("../Utils/classes/KashierPaymentService");
+
+const SendPromotionRequest = async (req, res) => {
+  const { property_id, duration, redirect } = req.body;
+  const userId = req.user.userId;
+
+  const sponsorPlan = [1, 3, 6];
+  const sponsorPrices = { 1: 250, 3: 700, 6: 1000 };
+
+  const kashier = new KashierPaymentService(
+    process.env.PAYMENT_SEC_KEY,
+    process.env.PAYMENT_API_KEY,
+    process.env.PAYMENT_MERCHENT_ID,
+    redirect,
+    `http://${process.env.URL}/api/sponser/webhook`,
+  );
+
+  if (!sponsorPlan.includes(Number(duration))) {
+    return res
+      .status(400)
+      .json({ msg: "Duration should be 1, 3, or 6 months" });
+  }
+
+  // 1. Verify ownership and check for existing "Stacked" promotions
+  // We look for the latest end_date among PAID promotions for this property
+  const checkSql = `
+    SELECT u.email, 
+    (SELECT MAX(end_date) FROM sponsored_listings WHERE property_id = ? AND is_paid = TRUE AND end_date > NOW()) as latest_expiry
+    FROM users u 
+    JOIN property p ON u.user_id = p.owner_id 
+    WHERE p.property_id = ? AND p.owner_id = ?`;
+
+  connection.query(
+    checkSql,
+    [property_id, property_id, userId],
+    async (err, rows) => {
+      if (err) return res.status(500).json({ msg: "Database error" });
+      if (rows.length === 0)
+        return res.status(403).json({ msg: "Unauthorized" });
+
+      const userEmail = rows[0].email;
+      const latestExpiry = rows[0].latest_expiry;
+
+      // Determine the Start Date:
+      // If an active promotion exists, start after it. Otherwise, start NOW.
+      let startDate = latestExpiry ? new Date(latestExpiry) : new Date();
+
+      let endDate = new Date(startDate);
+      endDate.setMonth(startDate.getMonth() + Number(duration));
+
+      const amountToPay = sponsorPrices[duration];
+
+      // 2. Insert a NEW record (Each attempt gets a unique ID)
+      const insertSql = `
+      INSERT INTO sponsored_listings 
+      (property_id, start_date, end_date, amount_paid, is_active, is_paid) 
+      VALUES (?, ?, ?, ?, FALSE, FALSE)
+    `;
+
+      connection.query(
+        insertSql,
+        [property_id, startDate, endDate, amountToPay],
+        async (dbErr, result) => {
+          if (dbErr)
+            return res.status(500).json({ msg: "Failed to save request" });
+
+          const promotionId = result.insertId; // Unique ID for this specific transaction
+
+          try {
+            const customer = { email: userEmail, reference: String(userId) };
+            const dateStr = new Date().toISOString().split("T")[0];
+
+            // We include promotionId in the orderId so the Webhook knows EXACTLY which row to update
+            const merchantOrderId = `AQAR:SPONSER:${property_id}:${promotionId}:${dateStr}`;
+
+            const sessionPayload = kashier.createPaymentSession(
+              parseFloat(amountToPay),
+              customer,
+              "EGP",
+              merchantOrderId,
+            );
+
+            const kashierResponse =
+              await kashier.sendPaymentRequest(sessionPayload);
+
+            if (kashierResponse?.sessionUrl) {
+              return res.status(200).json({ url: kashierResponse.sessionUrl });
+            }
+            throw new Error("Kashier error");
+          } catch (error) {
+            res.status(500).json({ msg: "Payment initiation failed" });
+          }
+        },
+      );
+    },
+  );
+};
+
 const SponsorshipWebhook = (req, res) => {
-  // 1. Acknowledge Kashier immediately to prevent retries
+  // 1. Acknowledge Kashier immediately to prevent gateway timeout retries
   res.status(200).send("OK");
 
   const { data, event } = req.body;
@@ -135,12 +241,11 @@ const SponsorshipWebhook = (req, res) => {
   if (typeof orderId === "string" && orderId.startsWith("AQAR:SPONSER:")) {
     const parts = orderId.split(":");
     const propertyId = parts[2];
-    const promotionId = parts[3]; // The unique ID for this specific row
+    const promotionId = parts[3]; // The unique transactional primary key ID
 
     const notifier = req.app.get("notifier");
 
-    // We update the specific promotion record
-    // Logic: is_active only becomes TRUE if start_date is now or in the past
+    // 1. Update the unique granular historical timeline record
     const updateSql = `
       UPDATE sponsored_listings 
       SET is_paid = TRUE, 
@@ -156,11 +261,29 @@ const SponsorshipWebhook = (req, res) => {
       if (err) return console.error("❌ DB Error activating sponsorship:", err);
 
       if (result.affectedRows > 0) {
-        console.log(
-          `✨ Sponsorship record ${promotionId} activated for property ${propertyId}`,
-        );
+        console.log(`✨ Sponsorship record ${promotionId} activated for property ${propertyId}`);
 
-        // Fetch owner info for the success notification
+        // 2. CRITICAL SYNC STEP: Look up if this specific row just flipped to active. 
+        // If it did, push that status update live directly onto the property table column.
+        const syncPropertySql = `
+          UPDATE property 
+          SET is_sponsored = TRUE 
+          WHERE property_id = ? 
+            AND EXISTS (
+              SELECT 1 FROM sponsored_listings 
+              WHERE promotion_id = ? AND is_active = TRUE
+            )
+        `;
+
+        connection.query(syncPropertySql, [propertyId, promotionId], (syncErr) => {
+          if (syncErr) {
+            console.error("❌ Failed to sync is_sponsored flag to property table:", syncErr);
+          } else {
+            console.log(`🎯 Successfully set is_sponsored = TRUE on property ID: ${propertyId}`);
+          }
+        });
+
+        // 3. Fetch current listing info for owner system status notifications
         const ownerSql = `
           SELECT u.user_id, p.property_name 
           FROM property p 
@@ -186,4 +309,5 @@ const SponsorshipWebhook = (req, res) => {
     });
   }
 };
+
 module.exports = { SendPromotionRequest, SponsorshipWebhook };

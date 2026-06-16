@@ -209,26 +209,40 @@ const values = [
 };
 
 const getProperties = (req, res) => {
-  let { location, minPrice, maxPrice, minSize, maxSize, bedrooms, bathrooms,longitude,latitude } =
-    req.query;
-  // http://localhost:8000/property?minPrice=20 methal 3shan barghout maysara54  (ma fuck barghout ya 3am (sarhan))
+  let { 
+    location, 
+    minPrice, 
+    maxPrice, 
+    minSize, 
+    maxSize, 
+    bedrooms, 
+    bathrooms,
+    longitude,
+    latitude,
+    featured 
+  } = req.query;
 
-  // Base SQL query
+  // 1. Base SQL query
   let sql = "SELECT * FROM property WHERE 1=1";
   const params = [];
 
-  // Add filters dynamically
+  // 2. Explicitly filter for sponsored properties if frontend passes ?featured=true
+  if (featured === "true") {
+    sql += " AND is_sponsored = 1";
+  }
+
+  // 3. Add regular filters dynamically
   if (location) {
     sql += " AND location LIKE ?";
     params.push(`%${location}%`);
   }
   if (longitude) {
     sql += " AND longitude = ?";
-    params.push(`%${longitude}%`);
+    params.push(longitude);
   }
   if (latitude) {
     sql += " AND latitude = ?";
-    params.push(`%${latitude}%`);
+    params.push(latitude);
   }
   if (minPrice) {
     sql += " AND price_per_day >= ?";
@@ -255,6 +269,10 @@ const getProperties = (req, res) => {
     params.push(validateNumber(bathrooms));
   }
 
+  // 4. Pin sponsored properties to the top first, then sort by newest
+  sql += " ORDER BY is_sponsored DESC, property_id DESC";
+
+  // 5. Execute Query
   connection.query(sql, params, (err, results) => {
     if (err) {
       console.error("❌ Error fetching properties:", err);
@@ -263,9 +281,9 @@ const getProperties = (req, res) => {
 
     const properties = results.map((prop) => ({
       ...prop,
-      // FIX: The mysql2 driver returns arrays directly for JSON fields.
       images: prop.images || [],
       ownership_proofs: prop.ownership_proofs || [],
+      is_sponsored: !!prop.is_sponsored // Converts 1/0 from MySQL to true/false for the frontend
     }));
 
     res.status(200).json(properties);
@@ -550,6 +568,7 @@ const getMyProperty = (req, res) => {
       is_available, 
       is_verified,
       is_furnished,
+      is_sponsored,
       property_type,
       images,
       rate,
@@ -573,7 +592,8 @@ const getMyProperty = (req, res) => {
     
       images: typeof prop.images === 'string' ? JSON.parse(prop.images) : prop.images,
       is_available: !!prop.is_available,
-      is_verified: !!prop.is_verified
+      is_verified: !!prop.is_verified,
+      is_sponsored: !!prop.is_sponsored
     }));
 
     res.status(200).json(formattedResults);
