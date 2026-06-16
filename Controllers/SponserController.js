@@ -4,6 +4,12 @@ const crypto = require("crypto");
 const _ = require("underscore");
 const queryString = require("query-string");
 
+const {
+  KashierPaymentService,
+} = require("../Utils/classes/KashierPaymentService");
+
+
+
 
 const SendPromotionRequest = async (req, res) => {
   const { property_id, duration, redirect } = req.body;

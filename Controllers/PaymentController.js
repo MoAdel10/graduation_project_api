@@ -3,7 +3,9 @@ require("dotenv").config();
 const crypto = require("crypto");
 const _ = require("underscore");
 const queryString = require("query-string").default || require("query-string");
-const { KashierPaymentService } = require("../Utils/classes/KashierPaymentService");
+const {
+  KashierPaymentService,
+} = require("../Utils/classes/KashierPaymentService");
 
 const GetPaymentLink = async (req, res) => {
   const { request_id, invoice_id, subscription_id, redirect } = req.body;
@@ -34,7 +36,9 @@ const GetPaymentLink = async (req, res) => {
   try {
     const [rows] = await pool.query(sql, params);
     if (!rows || rows.length === 0) {
-      return res.status(404).json({ msg: "Payment target not found or already paid" });
+      return res
+        .status(404)
+        .json({ msg: "Payment target not found or already paid" });
     }
     const target = rows[0];
 
@@ -78,7 +82,7 @@ const KashierWebhook = async (req, res) => {
     }
 
     if (data.status !== "SUCCESS") {
-      return res.status(200).send("OK"); 
+      return res.status(200).send("OK");
     }
 
     const orderId = data.merchantOrderId;
@@ -87,10 +91,13 @@ const KashierWebhook = async (req, res) => {
     // ==========================================
     // --- SCENARIO A: MONTHLY RENT PAYMENT ---
     // ==========================================
-    const [invRows] = await pool.query("SELECT * FROM invoices WHERE invoice_id = ?", [orderId]);
+    const [invRows] = await pool.query(
+      "SELECT * FROM invoices WHERE invoice_id = ?",
+      [orderId],
+    );
     if (invRows.length > 0) {
       const invoice = invRows[0];
-      if (invoice.status === 'PAID') return res.status(200).send("OK");
+      if (invoice.status === "PAID") return res.status(200).send("OK");
 
       const connection = await pool.getConnection();
       try {
@@ -104,20 +111,25 @@ const KashierWebhook = async (req, res) => {
         // 1. Update Invoice Status
         await connection.query(
           `UPDATE invoices SET status = 'PAID', paid_at = CURRENT_TIMESTAMP, kashier_order_id = ? WHERE invoice_id = ?`,
-          [data.transactionId, orderId]
+          [data.transactionId, orderId],
         );
 
         // 2. ATOMICALLY ADD TO LANDLORD'S BALANCE FOR LATER MONTHS 💰
         await connection.query(
           `UPDATE users SET balance = balance + ? WHERE user_id = ?`,
-          [ownerEarnings, invoice.owner_id]
+          [ownerEarnings, invoice.owner_id],
         );
 
         // 3. Log the Payment Intent
         await connection.query(
           `INSERT INTO paymentintents (payment_id, user_id, payment_type, value, payment_method, status)
            VALUES (?, ?, 'rent_monthly', ?, ?, 'succeeded')`,
-          [data.transactionId, invoice.renter_id, totalPrice, data.paymentMethod || "card"]
+          [
+            data.transactionId,
+            invoice.renter_id,
+            totalPrice,
+            data.paymentMethod || "card",
+          ],
         );
 
         await connection.commit();
@@ -127,7 +139,7 @@ const KashierWebhook = async (req, res) => {
           type: "MONTHLY_RENT_PAID",
           title: "Rent Paid Successfully ✅",
           body: `Your monthly rent payment of ${invoice.amount} EGP was received.`,
-          metadata: { invoice_id: orderId, transaction_id: data.transactionId }
+          metadata: { invoice_id: orderId, transaction_id: data.transactionId },
         });
 
         notifier.send({
@@ -135,9 +147,8 @@ const KashierWebhook = async (req, res) => {
           type: "MONTHLY_RENT_RECEIVED",
           title: "Rent Payment Received! 💰",
           body: `You received ${ownerEarnings} EGP for invoice #${orderId} (after platform fee).`,
-          metadata: { invoice_id: orderId }
+          metadata: { invoice_id: orderId },
         });
-
       } catch (txErr) {
         await connection.rollback();
         throw txErr;
@@ -150,33 +161,36 @@ const KashierWebhook = async (req, res) => {
     // ==========================================
     // --- SCENARIO C: LISTING SUBSCRIPTION ---
     // ==========================================
-    const [subRows] = await pool.query("SELECT * FROM listingsubscriptions WHERE subscription_id = ?", [orderId]);
+    const [subRows] = await pool.query(
+      "SELECT * FROM listingsubscriptions WHERE subscription_id = ?",
+      [orderId],
+    );
     if (subRows.length > 0) {
       const sub = subRows[0];
-      if (sub.status === 'PAID') return res.status(200).send("OK");
+      if (sub.status === "PAID") return res.status(200).send("OK");
 
       const connection = await pool.getConnection();
       try {
         await connection.beginTransaction();
-        
+
         await connection.query(
           `UPDATE listingsubscriptions SET status = 'PAID', kashier_order_id = ? WHERE subscription_id = ?`,
-          [data.transactionId, orderId]
+          [data.transactionId, orderId],
         );
-        
+
         await connection.query(
           `UPDATE property SET listing_status = 'active', listing_expiry = DATE_ADD(CURDATE(), INTERVAL ? MONTH) WHERE property_id = ?`,
-          [sub.plan_months, sub.property_id]
+          [sub.plan_months, sub.property_id],
         );
-        
+
         await connection.commit();
-        
+
         notifier.send({
           receiver: sub.owner_id,
           type: "LISTING_FEE_PAID",
           title: "Property Listing Active! 🎉",
           body: `Your property listing fee of ${sub.amount} EGP was received. It will be active for ${sub.plan_months} months.`,
-          metadata: { subscription_id: orderId, property_id: sub.property_id }
+          metadata: { subscription_id: orderId, property_id: sub.property_id },
         });
       } catch (txErr) {
         await connection.rollback();
@@ -199,7 +213,7 @@ const KashierWebhook = async (req, res) => {
          FROM renting_request rr
          JOIN property p ON rr.property_id = p.property_id
          WHERE rr.request_id = ? FOR UPDATE`,
-        [orderId]
+        [orderId],
       );
 
       if (rows.length === 0) {
@@ -208,7 +222,7 @@ const KashierWebhook = async (req, res) => {
       }
 
       const requestDetails = rows[0];
-      if (requestDetails.request_state === 'PAID') {
+      if (requestDetails.request_state === "PAID") {
         await connection.rollback();
         return res.status(200).send("OK");
       }
@@ -219,14 +233,14 @@ const KashierWebhook = async (req, res) => {
 
       // 1. Update Request State
       await connection.query(
-        `UPDATE renting_request SET request_state = 'PAID', payment_id = ? WHERE request_id = ?`, 
-        [data.transactionId, orderId]
+        `UPDATE renting_request SET request_state = 'PAID', payment_id = ? WHERE request_id = ?`,
+        [data.transactionId, orderId],
       );
 
       // 2. Pay the Landlord (First Month) 💰
       await connection.query(
-        `UPDATE users SET balance = balance + ? WHERE user_id = ?`, 
-        [ownerEarnings, requestDetails.owner_id]
+        `UPDATE users SET balance = balance + ? WHERE user_id = ?`,
+        [ownerEarnings, requestDetails.owner_id],
       );
 
       // 3. Create the Actual Lease
@@ -237,38 +251,53 @@ const KashierWebhook = async (req, res) => {
         nextBilling.setMonth(nextBilling.getMonth() + 1);
         nextBillingDate = nextBilling.toISOString().slice(0, 10);
       }
-      
+
       await connection.query(
         `INSERT INTO lease (lease_id, request_id, renter_id, owner_id, property_id, renting_type, status, check_in_date, check_out_date, next_billing_date)
-         VALUES (?, ?, ?, ?, ?, ?, 'UPCOMING', ?, ?, ?)`, 
-        [leaseId, orderId, requestDetails.renter_id, requestDetails.owner_id, requestDetails.property_id, requestDetails.renting_type, requestDetails.check_in_date, requestDetails.check_out_date, nextBillingDate]
+         VALUES (?, ?, ?, ?, ?, ?, 'UPCOMING', ?, ?, ?)`,
+        [
+          leaseId,
+          orderId,
+          requestDetails.renter_id,
+          requestDetails.owner_id,
+          requestDetails.property_id,
+          requestDetails.renting_type,
+          requestDetails.check_in_date,
+          requestDetails.check_out_date,
+          nextBillingDate,
+        ],
       );
 
       // 4. Log the Payment Intent
       await connection.query(
         `INSERT INTO paymentintents (payment_id, user_id, property_id, payment_type, value, payment_method, status)
          VALUES (?, ?, ?, 'rent', ?, ?, 'succeeded')`,
-        [data.transactionId, requestDetails.renter_id, requestDetails.property_id, totalPrice, data.paymentMethod || "card"]
+        [
+          data.transactionId,
+          requestDetails.renter_id,
+          requestDetails.property_id,
+          totalPrice,
+          data.paymentMethod || "card",
+        ],
       );
 
       await connection.commit();
 
       notifier.send({
-        receiver: requestDetails.renter_id, 
-        type: "PAYMENT_SUCCESS", 
+        receiver: requestDetails.renter_id,
+        type: "PAYMENT_SUCCESS",
         title: "Lease Confirmed! 🎉",
         body: `Your booking for "${requestDetails.property_name}" is now confirmed.`,
-        metadata: { request_id: orderId }
+        metadata: { request_id: orderId },
       });
 
       notifier.send({
-        receiver: requestDetails.owner_id, 
-        type: "RENT_PAID", 
+        receiver: requestDetails.owner_id,
+        type: "RENT_PAID",
         title: "New Booking! 💰",
         body: `A renter has paid for "${requestDetails.property_name}".`,
-        metadata: { request_id: orderId }
+        metadata: { request_id: orderId },
       });
-
     } catch (txErr) {
       await connection.rollback();
       throw txErr;
@@ -285,15 +314,16 @@ const KashierWebhook = async (req, res) => {
 
 const refundPayment = async (req, res) => {
   const { request_id, reason } = req.body;
-  if (!request_id) return res.status(400).json({ msg: "Request ID is required" });
+  if (!request_id)
+    return res.status(400).json({ msg: "Request ID is required" });
 
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
 
     const [results] = await connection.query(
-      "SELECT * FROM renting_request WHERE request_id = ? FOR UPDATE", 
-      [request_id]
+      "SELECT * FROM renting_request WHERE request_id = ? FOR UPDATE",
+      [request_id],
     );
 
     if (results.length === 0) {
@@ -304,13 +334,21 @@ const refundPayment = async (req, res) => {
     const rentRequest = results[0];
     if (rentRequest.request_state !== "PAID") {
       await connection.rollback();
-      return res.status(400).json({ msg: "Refunds are only possible for paid requests." });
+      return res
+        .status(400)
+        .json({ msg: "Refunds are only possible for paid requests." });
     }
 
-    await connection.query("UPDATE renting_request SET request_state = 'REFUND_PROCESSING' WHERE request_id = ?", [request_id]);
-    await connection.commit(); 
+    await connection.query(
+      "UPDATE renting_request SET request_state = 'REFUND_PROCESSING' WHERE request_id = ?",
+      [request_id],
+    );
+    await connection.commit();
 
-    const kashier = new KashierPaymentService(process.env.PAYMENT_SEC_KEY, process.env.PAYMENT_API_KEY);
+    const kashier = new KashierPaymentService(
+      process.env.PAYMENT_SEC_KEY,
+      process.env.PAYMENT_API_KEY,
+    );
     const refundResponse = await kashier.sendRefundRequest(
       rentRequest.total_price,
       rentRequest.payment_id,
@@ -318,12 +356,23 @@ const refundPayment = async (req, res) => {
     );
 
     if (refundResponse && refundResponse.status === "SUCCESS") {
-      await pool.query("UPDATE renting_request SET request_state = 'REFUNDED' WHERE request_id = ?", [request_id]);
-      
+      await pool.query(
+        "UPDATE renting_request SET request_state = 'REFUNDED' WHERE request_id = ?",
+        [request_id],
+      );
+
       const paymentIntentId = crypto.randomUUID();
       await pool.query(
         `INSERT INTO paymentintents (payment_id, user_id, property_id, payment_type, value, payment_method, status) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [paymentIntentId, rentRequest.renter_id, rentRequest.property_id, "refund", rentRequest.total_price, "card", "succeeded"]
+        [
+          paymentIntentId,
+          rentRequest.renter_id,
+          rentRequest.property_id,
+          "refund",
+          rentRequest.total_price,
+          "card",
+          "succeeded",
+        ],
       );
 
       req.app.get("notifier").send({
@@ -336,12 +385,22 @@ const refundPayment = async (req, res) => {
 
       return res.status(200).json({ msg: "Refund processed successfully." });
     } else {
-      await pool.query("UPDATE renting_request SET request_state = 'PAID' WHERE request_id = ?", [request_id]);
-      return res.status(500).json({ msg: "Refund failed at payment gateway.", details: refundResponse?.message });
+      await pool.query(
+        "UPDATE renting_request SET request_state = 'PAID' WHERE request_id = ?",
+        [request_id],
+      );
+      return res
+        .status(500)
+        .json({
+          msg: "Refund failed at payment gateway.",
+          details: refundResponse?.message,
+        });
     }
   } catch (error) {
     console.error("Refund Error: ", error);
-    return res.status(500).json({ msg: "An unexpected error occurred during the refund process." });
+    return res
+      .status(500)
+      .json({ msg: "An unexpected error occurred during the refund process." });
   } finally {
     connection.release();
   }
@@ -349,17 +408,21 @@ const refundPayment = async (req, res) => {
 
 const requestWithdrawal = async (req, res) => {
   const { amount, method, receiverData } = req.body;
-  const userId = req.user.id;
-
+  const userId = req.user.userId;
   if (!amount || !method || !receiverData) {
-    return res.status(400).json({ msg: "Amount, method, and receiver data are required." });
+    return res
+      .status(400)
+      .json({ msg: "Amount, method, and receiver data are required." });
   }
 
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
 
-    const [results] = await connection.query("SELECT balance FROM users WHERE user_id = ? FOR UPDATE", [userId]);
+    const [results] = await connection.query(
+      "SELECT balance FROM users WHERE user_id = ? FOR UPDATE",
+      [userId],
+    );
     if (results.length === 0) {
       await connection.rollback();
       return res.status(404).json({ msg: "User not found." });
@@ -372,21 +435,31 @@ const requestWithdrawal = async (req, res) => {
     }
 
     const newBalance = balance - amount;
-    await connection.query("UPDATE users SET balance = ? WHERE user_id = ?", [newBalance, userId]);
+    await connection.query("UPDATE users SET balance = ? WHERE user_id = ?", [
+      newBalance,
+      userId,
+    ]);
 
     const paymentIntentId = crypto.randomUUID();
     await connection.query(
       `INSERT INTO paymentintents (payment_id, user_id, payment_type, value, payment_method, status) VALUES (?, ?, 'withdraw', ?, ?, 'pending')`,
-      [paymentIntentId, userId, amount, method]
+      [paymentIntentId, userId, amount, method],
     );
 
-    await connection.commit(); 
+    await connection.commit();
 
     const kashier = new KashierPaymentService(process.env.PAYMENT_SEC_KEY);
-    const withdrawalResponse = await kashier.sendMoney(amount, method, receiverData);
+    const withdrawalResponse = await kashier.sendMoney(
+      amount,
+      method,
+      receiverData,
+    );
 
     if (withdrawalResponse && withdrawalResponse.status === "SUCCESS") {
-      await pool.query("UPDATE paymentintents SET status = 'succeeded' WHERE payment_id = ?", [paymentIntentId]);
+      await pool.query(
+        "UPDATE paymentintents SET status = 'succeeded' WHERE payment_id = ?",
+        [paymentIntentId],
+      );
 
       req.app.get("notifier").send({
         receiver: userId,
@@ -397,26 +470,41 @@ const requestWithdrawal = async (req, res) => {
       });
       return res.status(200).json({ msg: "Withdrawal successful." });
     } else {
-      await pool.query("UPDATE users SET balance = balance + ? WHERE user_id = ?", [amount, userId]);
-      await pool.query("UPDATE paymentintents SET status = 'failed' WHERE payment_id = ?", [paymentIntentId]);
-      return res.status(500).json({ msg: "Withdrawal failed at payment gateway.", details: withdrawalResponse?.message });
+      await pool.query(
+        "UPDATE users SET balance = balance + ? WHERE user_id = ?",
+        [amount, userId],
+      );
+      await pool.query(
+        "UPDATE paymentintents SET status = 'failed' WHERE payment_id = ?",
+        [paymentIntentId],
+      );
+      return res
+        .status(500)
+        .json({
+          msg: "Withdrawal failed at payment gateway.",
+          details: withdrawalResponse?.message,
+        });
     }
   } catch (error) {
     console.error("Withdrawal Error: ", error);
-    return res.status(500).json({ msg: "An unexpected error occurred during the withdrawal process." });
+    return res
+      .status(500)
+      .json({
+        msg: "An unexpected error occurred during the withdrawal process.",
+      });
   } finally {
     connection.release();
   }
 };
 
 const getUserBalance = async (req, res) => {
-  const userId = req.user.id; // Assumes your authentication middleware populates req.user
+  const userId = req.user.userId; // Assumes your authentication middleware populates req.user
 
   try {
     // Fetch the balance directly from the database
     const [rows] = await pool.query(
       "SELECT balance FROM users WHERE user_id = ?",
-      [userId]
+      [userId],
     );
 
     if (rows.length === 0) {
@@ -429,7 +517,7 @@ const getUserBalance = async (req, res) => {
     return res.status(200).json({
       success: true,
       balance: userBalance,
-      currency: "EGP"
+      currency: "EGP",
     });
   } catch (error) {
     console.error("Error fetching user balance:", error);
