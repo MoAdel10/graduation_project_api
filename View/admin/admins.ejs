@@ -1,13 +1,17 @@
 <%- include('../partials/header') %>
 <div class="card">
-    <h2>Admin Management</h2>
+    <h2 class="card-title">Admin Management</h2>
     <table>
         <thead>
             <tr><th>ID</th><th>Email</th><th>Role</th></tr>
         </thead>
         <tbody>
             <% admins.forEach(a => { %>
-                <tr><td><%= a.admin_id %></td><td><%= a.email %></td><td><%= a.role %></td></tr>
+                <tr>
+                    <td><%= a.admin_id %></td>
+                    <td><%= a.email %></td>
+                    <td><span class="badge badge-gold"><%= a.role %></span></td>
+                </tr>
             <% }) %>
         </tbody>
     </table>

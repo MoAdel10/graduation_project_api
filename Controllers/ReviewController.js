@@ -73,6 +73,27 @@ const addReview = (req, res) => {
         return res.status(500).json({ msg: "Database error inserting review" });
       }
 
+      // Notify property owner
+      const notifier = req.app.get("notifier");
+      if (notifier) {
+        connection.query(
+          "SELECT owner_id FROM property WHERE property_id = ?",
+          [propId],
+          (ownerErr, ownerRows) => {
+            if (!ownerErr && ownerRows.length > 0) {
+              notifier.send({
+                receiver: ownerRows[0].owner_id,
+                sender: userId,
+                type: "NEW_REVIEW",
+                title: "New Review Received",
+                body: `A ${ratingVal}-star review was left on your property.`,
+                metadata: { property_id: propId, rating: ratingVal },
+              });
+            }
+          },
+        );
+      }
+
       // Automatically recalculate and update Property rating
       const updateRateSql = `
         UPDATE property 
@@ -110,25 +131,59 @@ const addReview = (req, res) => {
         const lease = leaseRows[0];
         finalPropertyId = lease.property_id;
 
-        insertReview(finalPropertyId, targetRentId);
+        // Check for duplicate review
+        connection.query(
+          "SELECT review_id FROM reviews WHERE user_id = ? AND property_id = ? AND rent_id = ?",
+          [userId, finalPropertyId, targetRentId],
+          (dupErr, dupRows) => {
+            if (dupErr) {
+              console.error("❌ Error checking duplicate review:", dupErr);
+              return res.status(500).json({ msg: "Database error checking existing review" });
+            }
+
+            if (dupRows.length > 0) {
+              return res.status(409).json({ msg: "You have already reviewed this stay." });
+            }
+
+            insertReview(finalPropertyId, targetRentId);
+          }
+        );
       }
     );
   } else {
-    // Just property_id provided, verify property exists
+    // Just property_id provided — verify the user has a completed lease for this property
     connection.query(
-      "SELECT property_id FROM property WHERE property_id = ?",
-      [property_id],
-      (propErr, propRows) => {
-        if (propErr) {
-          console.error("❌ Error checking property:", propErr);
-          return res.status(500).json({ msg: "Database error checking property" });
+      "SELECT lease_id, status FROM lease WHERE property_id = ? AND renter_id = ? AND status = 'COMPLETED'",
+      [property_id, userId],
+      (leaseErr, leaseRows) => {
+        if (leaseErr) {
+          console.error("❌ Error checking lease:", leaseErr);
+          return res.status(500).json({ msg: "Database error checking lease" });
         }
 
-        if (propRows.length === 0) {
-          return res.status(404).json({ msg: "Property not found." });
+        if (leaseRows.length === 0) {
+          return res.status(403).json({ msg: "You can only review properties you have completed a stay at." });
         }
 
-        insertReview(finalPropertyId, null);
+        const completedLeaseId = leaseRows[0].lease_id;
+
+        // Check for duplicate review
+        connection.query(
+          "SELECT review_id FROM reviews WHERE user_id = ? AND property_id = ? AND rent_id = ?",
+          [userId, property_id, completedLeaseId],
+          (dupErr, dupRows) => {
+            if (dupErr) {
+              console.error("❌ Error checking duplicate review:", dupErr);
+              return res.status(500).json({ msg: "Database error checking existing review" });
+            }
+
+            if (dupRows.length > 0) {
+              return res.status(409).json({ msg: "You have already reviewed this property." });
+            }
+
+            insertReview(property_id, completedLeaseId);
+          }
+        );
       }
     );
   }

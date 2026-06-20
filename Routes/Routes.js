@@ -13,6 +13,8 @@ const chatRoutes = require("./ChatRoutes")
 const reviewRoutes = require("./ReviewRoutes")
 const sponserRoute = require("./SponserRoute")
 const AiGateController = require("./AiGateRouter")
+const saleRoute = require("./SaleRoute")
+const invoiceRoutes = require("./InvoiceRoutes")
 
 function mountRoutes(app){
     app.use("/",authRoute)
@@ -30,6 +32,8 @@ function mountRoutes(app){
     app.use("/",reviewRoutes)
     app.use("/",sponserRoute)
     app.use("/",AiGateController)
+    app.use("/", saleRoute)
+    app.use("/", invoiceRoutes)
     console.log("✅ Routes Mounted");
 }
 

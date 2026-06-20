@@ -1,4 +1,4 @@
-const connection = require("../DB");
+const pool = require("../DB");
 require("dotenv").config();
 
 // 1. Admin checks the status of a specific property
@@ -7,7 +7,7 @@ const checkVerification = (req, res) => {
 
   if (!id) return res.status(400).json({ msg: "Error: id is needed" });
 
-  connection.query(
+  pool.query(
     "SELECT is_verified FROM property WHERE property_id = ?",
     [id],
     (err, result) => {
@@ -21,47 +21,41 @@ const checkVerification = (req, res) => {
 
 const resolveVerification = (req, res) => {
   const { id } = req.params;
-  const { status, rejectionReason } = req.body; 
+  const { status, rejectionReason } = req.body;
   const adminId = req.admin.admin_id;
 
   if (!['approved', 'rejected'].includes(status)) {
     return res.status(400).json({ msg: "Invalid status. Use 'approved' or 'rejected'." });
   }
 
-  connection.beginTransaction((err) => {
-    if (err) return res.status(500).json({ msg: "Transaction Error" });
+  pool.query(
+    "SELECT property_id FROM verificationrequests WHERE request_id = ?",
+    [id],
+    (err, rows) => {
+      if (err) return res.status(500).json({ msg: "Database error" });
+      if (rows.length === 0) return res.status(404).json({ msg: "Request not found" });
 
-    // Step A: Update history/request table
-    const sqlRequest = `
-      UPDATE verificationrequests 
-      SET status = ?, rejection_reason = ?, admin_id = ? 
-      WHERE request_id = ?
-    `;
-    
-    connection.query(sqlRequest, [status, rejectionReason || null, adminId, id], (err) => {
-      if (err) return connection.rollback(() => res.status(500).json({ msg: "Failed to update request" }));
+      const propertyId = rows[0].property_id;
+      const isVerified = (status === 'approved' ? 1 : 0);
 
-      // Step B: Get the property_id linked to this request
-      connection.query("SELECT property_id FROM verificationrequests WHERE request_id = ?", [id], (err, rows) => {
-        if (err || rows.length === 0) {
-          return connection.rollback(() => res.status(404).json({ msg: "Request not found" }));
+      pool.query(
+        "UPDATE verificationrequests SET status = ?, rejection_reason = ?, admin_id = ? WHERE request_id = ?",
+        [status, rejectionReason || null, adminId, id],
+        (err) => {
+          if (err) return res.status(500).json({ msg: "Failed to update request" });
+
+          pool.query(
+            "UPDATE property SET is_verified = ? WHERE property_id = ?",
+            [isVerified, propertyId],
+            (err) => {
+              if (err) return res.status(500).json({ msg: "Failed to update property" });
+              res.status(200).json({ msg: `Property has been ${status}` });
+            }
+          );
         }
-
-        const propertyId = rows[0].property_id;
-        const isVerified = (status === 'approved' ? 1 : 0);
-
-        // Step C: Update the actual Property status
-        connection.query("UPDATE property SET is_verified = ? WHERE property_id = ?", [isVerified, propertyId], (err) => {
-          if (err) return connection.rollback(() => res.status(500).json({ msg: "Failed to update property" }));
-
-          connection.commit((err) => {
-            if (err) return connection.rollback(() => res.status(500).json({ msg: "Commit error" }));
-            res.status(200).json({ msg: `Property has been ${status}` });
-          });
-        });
-      });
-    });
-  });
+      );
+    }
+  );
 };
 
 module.exports = { checkVerification, resolveVerification };

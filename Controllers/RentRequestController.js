@@ -1,4 +1,4 @@
-const connection = require("../DB");
+const pool = require("../DB");
 const crypto = require("crypto");
 
 const getRentRequests = (req, res) => {
@@ -19,7 +19,7 @@ const getRentRequests = (req, res) => {
     ORDER BY rr.created_at DESC
   `;
 
-  connection.query(sql, [userId, userId, userId, userId], (err, results) => {
+  pool.query(sql, [userId, userId, userId, userId], (err, results) => {
     if (err) {
       console.error(err);
       return res.status(500).json({ msg: "Database error" });
@@ -43,7 +43,6 @@ function validateDateRange(checkIn, checkOut) {
   if (!checkIn || !checkOut)
     return { ok: false, msg: "check_in_date and check_out_date are required" };
 
-  // Very basic format check (usually 'YYYY-MM-DD')
   const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
   if (!dateRegex.test(checkIn) || !dateRegex.test(checkOut)) {
     return { ok: false, msg: "Invalid date format. Use YYYY-MM-DD" };
@@ -54,6 +53,12 @@ function validateDateRange(checkIn, checkOut) {
 
   if (Number.isNaN(inDate.getTime()) || Number.isNaN(outDate.getTime())) {
     return { ok: false, msg: "Invalid date values" };
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (inDate.getTime() <= today.getTime()) {
+    return { ok: false, msg: "check_in_date must be at least tomorrow" };
   }
 
   if (outDate <= inDate) {
@@ -70,15 +75,15 @@ function hasOverlap(propertyId, checkIn, checkOut, excludeRequestId, cb) {
     SELECT 1
     FROM renting_request
     WHERE property_id = ?
-      AND request_id <> ?
-      AND request_state IN ('ACCEPTED', 'PAID')
-      AND ? < check_out_date
+      AND (? IS NULL OR request_id <> ?)
+      AND request_state IN ('PENDING', 'ACCEPTED', 'PAID')
+      AND ? <= check_out_date
       AND ? > check_in_date
     LIMIT 1
   `;
-  connection.query(
+  pool.query(
     sql,
-    [propertyId, excludeRequestId, checkIn, checkOut],
+    [propertyId, excludeRequestId, excludeRequestId, checkIn, checkOut],
     (err, rows) => {
       if (err) return cb(err);
       cb(null, rows.length > 0);
@@ -93,11 +98,11 @@ function hasDuplicateRequest(renterId, propertyId, checkIn, checkOut, cb) {
     WHERE renter_id = ?
       AND property_id = ?
       AND request_state IN ('PENDING', 'ACCEPTED', 'PAID')
-      AND ? < check_out_date
+      AND ? <= check_out_date
       AND ? > check_in_date
     LIMIT 1
   `;
-  connection.query(
+  pool.query(
     sql,
     [renterId, propertyId, checkIn, checkOut],
     (err, rows) => {
@@ -140,7 +145,7 @@ const createRentRequest = (req, res) => {
     WHERE property_id = ?
     LIMIT 1
   `;
-  connection.query(propSql, [property_id], (err, props) => {
+  pool.query(propSql, [property_id], (err, props) => {
     if (err) {
       console.error("❌ DB error (property lookup):", err);
       return res.status(500).json({ msg: "Database error" });
@@ -162,110 +167,136 @@ const createRentRequest = (req, res) => {
       return res.status(400).json({ msg: "property is not verified" });
     }
 
-    // Start Transaction
-    connection.beginTransaction(transErr => {
-      if (transErr) {
-        return res.status(500).json({ msg: "Database error starting transaction." });
+    // Acquire a dedicated connection for the transaction
+    pool.getConnection((poolErr, conn) => {
+      if (poolErr) {
+        console.error("❌ DB error (getConnection):", poolErr);
+        return res.status(500).json({ msg: "Database connection error" });
       }
 
-      // 2) property availability check (inside transaction)
-      hasOverlap(
-        property.property_id,
-        check_in_date,
-        check_out_date,
-        null, // No request ID to exclude yet
-        (err, overlap) => {
-          if (err) {
-            return connection.rollback(() => res.status(500).json({ msg: "Database error during overlap check." }));
-          }
-          if (overlap) {
-            return connection.rollback(() => res.status(409).json({ msg: "property already reserved for these dates" }));
-          }
+      conn.beginTransaction(transErr => {
+        if (transErr) {
+          conn.release();
+          return res.status(500).json({ msg: "Database error starting transaction." });
+        }
 
-          // 3) Idempotency check (inside transaction)
-          hasDuplicateRequest(
-            renterId,
-            property.property_id,
-            check_in_date,
-            check_out_date,
-            (err, exists) => {
-              if (err) {
-                return connection.rollback(() => res.status(500).json({ msg: "Database error during duplicate check." }));
-              }
-              if (exists) {
-                return connection.rollback(() => res.status(409).json({ msg: "You already have an active rent request for this property and date range" }));
-              }
+        const rollbackAndRelease = (statusCode, msg) => {
+          conn.rollback(() => {
+            conn.release();
+            return res.status(statusCode).json({ msg });
+          });
+        };
 
-              // 4) Calculate price
-              let totalPrice;
-              if (renting_type === "DAY") {
-                if (!["DAY", "MONTH", "YEAR"].includes(property.pricing_unit)) {
-                     return res.status(400).json({ msg: "This property is not available for daily rent." });
+        // 2) property availability check (inside transaction)
+        hasOverlap(
+          property.property_id,
+          check_in_date,
+          check_out_date,
+          null, // No request ID to exclude yet
+          (err, overlap) => {
+            if (err) {
+              return rollbackAndRelease(500, "Database error during overlap check.");
+            }
+            if (overlap) {
+              return rollbackAndRelease(409, "property already reserved for these dates");
+            }
+
+            // 3) Idempotency check (inside transaction)
+            hasDuplicateRequest(
+              renterId,
+              property.property_id,
+              check_in_date,
+              check_out_date,
+              (err, exists) => {
+                if (err) {
+                  return rollbackAndRelease(500, "Database error during duplicate check.");
                 }
-                const days = Math.round((new Date(check_out_date) - new Date(check_in_date)) / (1000 * 60 * 60 * 24));
-                if(days <= 0) return res.status(400).json({ msg: "Invalid date range" });
-                
-                const pricePerDay = Number(property.price_per_day);
-                if (!pricePerDay || pricePerDay <= 0) return res.status(400).json({ msg: "property price_per_day is invalid" });
-                
-                totalPrice = Number((pricePerDay * days).toFixed(2));
-                insertRentRequest(totalPrice);
-              } else { // MONTH
-                  if (property.pricing_unit !== "MONTH") {
-                    return res.status(400).json({ msg: "This property is not available for monthly rent." });
+                if (exists) {
+                  return rollbackAndRelease(409, "You already have an active rent request for this property and date range");
+                }
+
+                // 4) Calculate price
+                let totalPrice;
+                if (renting_type === "DAY") {
+                  if (!["DAY", "MONTH", "YEAR"].includes(property.pricing_unit)) {
+                    conn.rollback(() => { conn.release(); });
+                    return res.status(400).json({ msg: "This property is not available for daily rent." });
                   }
-                  totalPrice = Number(property.price_value);
+                  const days = Math.round((new Date(check_out_date) - new Date(check_in_date)) / (1000 * 60 * 60 * 24));
+                  if(days <= 0) {
+                    conn.rollback(() => { conn.release(); });
+                    return res.status(400).json({ msg: "Invalid date range" });
+                  }
+                  
+                  const pricePerDay = Number(property.price_per_day);
+                  if (!pricePerDay || pricePerDay <= 0) {
+                    conn.rollback(() => { conn.release(); });
+                    return res.status(400).json({ msg: "property price_per_day is invalid" });
+                  }
+                  
+                  totalPrice = Number((pricePerDay * days).toFixed(2));
                   insertRentRequest(totalPrice);
-              }
+                } else { // MONTH
+                    if (property.pricing_unit !== "MONTH") {
+                      conn.rollback(() => { conn.release(); });
+                      return res.status(400).json({ msg: "This property is not available for monthly rent." });
+                    }
+                    totalPrice = Number(property.price_value);
+                    insertRentRequest(totalPrice);
+                }
 
-              function insertRentRequest(totalPrice) {
-                const requestId = crypto.randomUUID();
-                const insertSql = `
-                  INSERT INTO renting_request
-                    (request_id, property_id, renter_id, renting_type, request_state, total_price, check_in_date, check_out_date)
-                  VALUES
-                    (?, ?, ?, ?, 'PENDING', ?, ?, ?)
-                `;
+                function insertRentRequest(totalPrice) {
+                  const requestId = crypto.randomUUID();
+                  const insertSql = `
+                    INSERT INTO renting_request
+                      (request_id, property_id, renter_id, renting_type, request_state, total_price, check_in_date, check_out_date)
+                    VALUES
+                      (?, ?, ?, ?, 'PENDING', ?, ?, ?)
+                  `;
 
-                connection.query(insertSql, [requestId, property.property_id, renterId, renting_type, totalPrice, check_in_date, check_out_date], (err) => {
-                  if (err) {
-                    return connection.rollback(() => res.status(500).json({ msg: "Database error creating request." }));
-                  }
-
-                  // If all goes well, commit the transaction
-                  connection.commit(commitErr => {
-                    if (commitErr) {
-                      return connection.rollback(() => res.status(500).json({ msg: "Database error committing transaction." }));
+                  conn.query(insertSql, [requestId, property.property_id, renterId, renting_type, totalPrice, check_in_date, check_out_date], (err) => {
+                    if (err) {
+                      return rollbackAndRelease(500, "Database error creating request.");
                     }
 
-                    // Send notification AFTER successful commit
-                    const notifier = req.app.get("notifier");
-                    notifier.send({
-                      sender: renterId,
-                      receiver: property.owner_id,
-                      type: "RENT_REQUEST",
-                      title: "New Rent Request!",
-                      body: `A user wants to rent "${property.property_name}" from ${check_in_date} to ${check_out_date}.`,
-                      metadata: {
-                        request_id: requestId,
-                        property_id: property.property_id,
-                        type: "rent_request",
-                      },
-                    });
+                    // If all goes well, commit the transaction
+                    conn.commit(commitErr => {
+                      if (commitErr) {
+                        return rollbackAndRelease(500, "Database error committing transaction.");
+                      }
 
-                    return res.status(201).json({
-                      msg: "Rent request created",
-                      request_id: requestId,
-                      request_state: "PENDING",
-                      total_price: totalPrice,
+                      // Release the connection after successful commit
+                      conn.release();
+
+                      // Send notification AFTER successful commit
+                      const notifier = req.app.get("notifier");
+                      notifier.send({
+                        sender: renterId,
+                        receiver: property.owner_id,
+                        type: "RENT_REQUEST",
+                        title: "New Rent Request!",
+                        body: `A user wants to rent "${property.property_name}" from ${check_in_date} to ${check_out_date}.`,
+                        metadata: {
+                          request_id: requestId,
+                          property_id: property.property_id,
+                          type: "rent_request",
+                        },
+                      });
+
+                      return res.status(201).json({
+                        msg: "Rent request created",
+                        request_id: requestId,
+                        request_state: "PENDING",
+                        total_price: totalPrice,
+                      });
                     });
                   });
-                });
+                }
               }
-            }
-          );
-        }
-      );
+            );
+          }
+        );
+      });
     });
   });
 };
@@ -277,7 +308,7 @@ const getRentRequestById = (req, res) => {
     return res.status(400).json({ msg: "id is required or not valid" });
   }
 
-  connection.query(
+  pool.query(
     "SELECT * FROM renting_request WHERE request_id = ?",
     [id],
     (err, results) => {
@@ -297,99 +328,124 @@ const getRentRequestById = (req, res) => {
 /**
  * POST /rent-requests/:id/accept
  * Who: Landlord
+ * Uses a transaction with SELECT ... FOR UPDATE to prevent race conditions.
  */
 const acceptRentRequest = (req, res) => {
   const landlordId = req.user.userId;
   const requestId = req.params.id;
 
-  // Get request + property owner + dates
-  const sql = `
-    SELECT rr.request_id, rr.property_id, rr.renter_id, rr.request_state,
-           rr.check_in_date, rr.check_out_date,
-           p.owner_id
-    FROM renting_request rr
-    INNER JOIN property p ON rr.property_id = p.property_id
-    WHERE rr.request_id = ?
-    LIMIT 1
-  `;
-  connection.query(sql, [requestId], (err, rows) => {
-    if (err) {
-      console.error("❌ DB error (accept lookup):", err);
-      return res.status(500).json({ msg: "Database error" });
+  pool.getConnection((poolErr, conn) => {
+    if (poolErr) {
+      console.error("❌ DB error (getConnection):", poolErr);
+      return res.status(500).json({ msg: "Database connection error" });
     }
 
-    if (rows.length === 0)
-      return res.status(404).json({ msg: "Rent request not found" });
+    conn.beginTransaction((transErr) => {
+      if (transErr) {
+        conn.release();
+        return res.status(500).json({ msg: "Database error starting transaction." });
+      }
 
-    const rr = rows[0];
-
-    // ownership
-    if (rr.owner_id !== landlordId) {
-      return res.status(403).json({ msg: "Unauthorized" });
-    }
-
-    // must be pending
-    if (rr.request_state !== "PENDING") {
-      return res.status(409).json({
-        msg: `Request can't be accepted from state ${rr.request_state}`,
-      });
-    }
-
-    // (recommended) re-check overlap before accept to avoid double-booking
-    hasOverlap(
-      rr.property_id,
-      rr.check_in_date,
-      rr.check_out_date,
-      rr.request_id,
-      (err, overlap) => {
-        if (err) {
-          console.error("❌ DB error (accept overlap):", err);
-          return res.status(500).json({ msg: "Database error" });
-        }
-        if (overlap) {
-          return res
-            .status(409)
-            .json({ msg: "property already reserved for these dates" });
-        }
-
-        // Atomic update: only if still pending
-        const updateSql = `
-        UPDATE renting_request
-        SET request_state = 'ACCEPTED'
-        WHERE request_id = ? AND request_state = 'PENDING'
-      `;
-        connection.query(updateSql, [requestId], (err, result) => {
-          if (err) {
-            console.error("❌ DB error (accept update):", err);
-            return res.status(500).json({ msg: "Database error" });
-          }
-
-          if (result.affectedRows === 0) {
-            return res.status(409).json({
-              msg: "Request was already updated (not PENDING anymore)",
-            });
-          }
-
-          const notifier = req.app.get("notifier");
-          notifier.send({
-            sender: landlordId,
-            receiver: rr.renter_id,
-            type: "RENT_REQUEST_ACCEPTED",
-            title: "Request Accepted! 🎉",
-            body: `Your rent request for the property has been accepted. You can now proceed to payment.`,
-            metadata: {
-              request_id: requestId,
-              property_id: rr.property_id,
-              status: "ACCEPTED",
-            },
-          });
-
-          return res
-            .status(200)
-            .json({ msg: "Rent request accepted", request_state: "ACCEPTED" });
+      const rollbackAndRelease = (statusCode, msg) => {
+        conn.rollback(() => {
+          conn.release();
+          return res.status(statusCode).json({ msg });
         });
-      },
-    );
+      };
+
+      // Lock the property row + fetch rent request inside the transaction
+      const lockSql = `
+        SELECT rr.request_id, rr.property_id, rr.renter_id, rr.request_state,
+               rr.check_in_date, rr.check_out_date,
+               p.owner_id
+        FROM renting_request rr
+        INNER JOIN property p ON rr.property_id = p.property_id
+        WHERE rr.request_id = ?
+        LIMIT 1
+        FOR UPDATE
+      `;
+      conn.query(lockSql, [requestId], (err, rows) => {
+        if (err) {
+          return rollbackAndRelease(500, "Database error during lock.");
+        }
+
+        if (rows.length === 0) {
+          return rollbackAndRelease(404, "Rent request not found");
+        }
+
+        const rr = rows[0];
+
+        if (rr.owner_id !== landlordId) {
+          return rollbackAndRelease(403, "Unauthorized");
+        }
+
+        if (rr.request_state !== "PENDING") {
+          return rollbackAndRelease(409, `Request can't be accepted from state ${rr.request_state}`);
+        }
+
+        // Overlap check inside the transaction (sees the locked row)
+        const overlapSql = `
+          SELECT 1
+          FROM renting_request
+          WHERE property_id = ?
+            AND request_id <> ?
+            AND request_state IN ('PENDING', 'ACCEPTED', 'PAID')
+            AND ? <= check_out_date
+            AND ? > check_in_date
+          LIMIT 1
+          FOR UPDATE
+        `;
+        conn.query(overlapSql, [rr.property_id, requestId, rr.check_in_date, rr.check_out_date], (err, overlapRows) => {
+          if (err) {
+            return rollbackAndRelease(500, "Database error during overlap check.");
+          }
+
+          if (overlapRows.length > 0) {
+            return rollbackAndRelease(409, "Property already reserved for these dates");
+          }
+
+          // Atomic update inside the transaction
+          const updateSql = `
+            UPDATE renting_request
+            SET request_state = 'ACCEPTED'
+            WHERE request_id = ? AND request_state = 'PENDING'
+          `;
+          conn.query(updateSql, [requestId], (err, result) => {
+            if (err) {
+              return rollbackAndRelease(500, "Database error during accept.");
+            }
+
+            if (result.affectedRows === 0) {
+              return rollbackAndRelease(409, "Request was already updated (not PENDING anymore)");
+            }
+
+            conn.commit((commitErr) => {
+              if (commitErr) {
+                return rollbackAndRelease(500, "Database error committing transaction.");
+              }
+
+              conn.release();
+
+              const notifier = req.app.get("notifier");
+              notifier.send({
+                sender: landlordId,
+                receiver: rr.renter_id,
+                type: "RENT_REQUEST_ACCEPTED",
+                title: "Request Accepted! 🎉",
+                body: "Your rent request for the property has been accepted. You can now proceed to payment.",
+                metadata: {
+                  request_id: requestId,
+                  property_id: rr.property_id,
+                  status: "ACCEPTED",
+                },
+              });
+
+              return res.status(200).json({ msg: "Rent request accepted", request_state: "ACCEPTED" });
+            });
+          });
+        });
+      });
+    });
   });
 };
 
@@ -410,7 +466,7 @@ const rejectRentRequest = (req, res) => {
     WHERE rr.request_id = ? AND p.owner_id = ? AND rr.request_state = 'PENDING'
   `;
 
-  connection.query(findSql, [requestId, landlordId], (err, rows) => {
+  pool.query(findSql, [requestId, landlordId], (err, rows) => {
     if (err) {
       console.error("❌ DB error (reject lookup):", err);
       return res.status(500).json({ msg: "Database error" });
@@ -431,7 +487,7 @@ const rejectRentRequest = (req, res) => {
       WHERE request_id = ? AND request_state = 'PENDING'
     `;
 
-    connection.query(updateSql, [requestId], (err, result) => {
+    pool.query(updateSql, [requestId], (err, result) => {
       if (err) {
         console.error("❌ DB error (reject update):", err);
         return res.status(500).json({ msg: "Database error" });
@@ -478,7 +534,7 @@ const cancelRentRequest = (req, res) => {
       AND rr.request_state IN ('PENDING', 'ACCEPTED')
   `;
 
-  connection.query(findSql, [requestId, renterId], (err, rows) => {
+  pool.query(findSql, [requestId, renterId], (err, rows) => {
     if (err) {
       console.error("❌ DB error (cancel lookup):", err);
       return res.status(500).json({ msg: "Database error" });
@@ -499,7 +555,7 @@ const cancelRentRequest = (req, res) => {
       WHERE request_id = ?
     `;
 
-    connection.query(updateSql, [requestId], (err, result) => {
+    pool.query(updateSql, [requestId], (err, result) => {
       if (err || result.affectedRows === 0) {
         console.error("❌ DB error (cancel update):", err);
         return res.status(500).json({ msg: "Failed to cancel request" });

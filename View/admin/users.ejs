@@ -1,13 +1,17 @@
 <%- include('../partials/header') %>
 <div class="card">
-    <h2>User Directory</h2>
+    <h2 class="card-title">User Directory</h2>
     <table>
         <thead>
             <tr><th>ID</th><th>Name</th><th>Email</th></tr>
         </thead>
         <tbody>
             <% users.forEach(u => { %>
-                <tr><td><%= u.user_id %></td><td><%= u.first_name %> <%= u.second_name %></td><td><%= u.email %></td></tr>
+                <tr>
+                    <td><%= u.user_id %></td>
+                    <td><strong><%= u.first_name %> <%= u.second_name %></strong></td>
+                    <td><%= u.email %></td>
+                </tr>
             <% }) %>
         </tbody>
     </table>

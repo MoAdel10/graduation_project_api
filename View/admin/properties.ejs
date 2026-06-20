@@ -1,6 +1,8 @@
 <%- include('../partials/header') %>
 <div class="card">
-    <h2>Property Listings</h2>
+    <div class="card-header">
+        <h2 class="card-title">Property Listings</h2>
+    </div>
     <table>
         <thead>
             <tr>
@@ -8,22 +10,22 @@
                 <th>Title</th>
                 <th>Location</th>
                 <th>Verified</th>
-                <th>Actions</th> </tr>
+                <th>Actions</th>
+            </tr>
         </thead>
         <tbody>
             <% properties.forEach(p => { %>
                 <tr>
                     <td><%= p.property_id %></td>
-                    <td><%= p.property_name %></td>
+                    <td><strong><%= p.property_name %></strong></td>
                     <td><%= p.location %></td>
                     <td>
-                        <span class="badge <%= p.is_verified ? 'verified' : 'unverified' %>">
-                            <%= p.is_verified ? "✅ Verified" : "❌ Unverified" %>
+                        <span class="badge <%= p.is_verified ? 'badge-green' : 'badge-red' %>">
+                            <%= p.is_verified ? "Verified" : "Unverified" %>
                         </span>
                     </td>
                     <td>
-                        <a href="/admin/properties/view/details/<%= p.property_id %>" 
-                           style="background: #007bff; color: white; padding: 5px 12px; border-radius: 4px; text-decoration: none; font-size: 14px;">
+                        <a href="/admin/properties/view/details/<%= p.property_id %>" class="btn btn-gold btn-sm">
                             View Details
                         </a>
                     </td>
@@ -32,10 +34,4 @@
         </tbody>
     </table>
 </div>
-
-<style>
-    .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-    .verified { background: #d4edda; color: #155724; }
-    .unverified { background: #f8d7da; color: #721c24; }
-</style>
 <%- include('../partials/footer') %>

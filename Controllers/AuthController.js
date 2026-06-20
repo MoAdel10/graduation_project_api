@@ -227,12 +227,18 @@ const requestPasswordReset = (req, res) => {
         async (err2) => {
           if (err2) return res.status(500).send("Database error");
 
-          const resetLink = `http://localhost:${process.env.CLIENT_PORT || 5173}/auth/reset-password/${resetToken}`;
-          await sendPasswordResetEmail(email, resetLink);
-
-          return res
-            .status(200)
-            .json({ msg: "Password reset link sent to your email" });
+          try {
+            const resetLink = `${process.env.FRONTEND_URL || `http://localhost:${process.env.CLIENT_PORT || 5173}`}/auth/reset-password/${resetToken}`;
+            await sendPasswordResetEmail(email, resetLink);
+            return res
+              .status(200)
+              .json({ msg: "Password reset link sent to your email" });
+          } catch (emailErr) {
+            console.error("❌ Failed to send password reset email:", emailErr.message);
+            return res
+              .status(500)
+              .json({ msg: "Failed to send email. Please try again later." });
+          }
         },
       );
     },
@@ -394,46 +400,120 @@ const updateUserProfile = async (req, res) => {
     return res.status(400).json({ msg: "No fields to update" });
   }
 
-  let updateFields = [];
-  let updateValues = [];
+  // Fetch current user data to check if email changed
+  connection.query(
+    "SELECT email, is_verified FROM users WHERE user_id = ?",
+    [userId],
+    async (err, userResults) => {
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).send("Database error");
+      }
+      if (userResults.length === 0) {
+        return res.status(404).json({ msg: "User not found" });
+      }
 
-  if (firstName) {
-    updateFields.push("first_name = ?");
-    updateValues.push(firstName);
-  }
+      const currentUser = userResults[0];
+      const emailChanged = email && email !== currentUser.email;
 
-  if (secondName) {
-    updateFields.push("second_name = ?");
-    updateValues.push(secondName);
-  }
+      // If email is changing, validate the new email
+      if (emailChanged) {
+        if (!isValidEmail(email)) {
+          return res.status(400).json({ msg: "Invalid email address" });
+        }
 
-  if (email) {
-    updateFields.push("email = ?");
-    updateValues.push(email);
-  }
+        // Check if new email is already taken by another user
+        const emailExists = await new Promise((resolve) => {
+          connection.query(
+            "SELECT user_id FROM users WHERE email = ? AND user_id != ?",
+            [email, userId],
+            (err, results) => resolve(err ? false : results.length > 0),
+          );
+        });
+        if (emailExists) {
+          return res.status(400).json({ msg: "Email is already used" });
+        }
+      }
 
-  if (password) {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    updateFields.push("password = ?");
-    updateValues.push(hashedPassword);
-  }
+      let updateFields = [];
+      let updateValues = [];
 
-  updateValues.push(userId);
+      if (firstName) {
+        updateFields.push("first_name = ?");
+        updateValues.push(firstName);
+      }
 
-  const sql = `UPDATE users SET ${updateFields.join(", ")} WHERE user_id = ?`;
+      if (secondName) {
+        updateFields.push("second_name = ?");
+        updateValues.push(secondName);
+      }
 
-  connection.query(sql, updateValues, (err, result) => {
-    if (err) {
-      console.error("Database error:", err);
-      return res.status(500).send("Database error");
-    }
+      if (email) {
+        updateFields.push("email = ?");
+        updateValues.push(email);
+      }
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ msg: "User not found" });
-    }
+      if (password) {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        updateFields.push("password = ?");
+        updateValues.push(hashedPassword);
+      }
 
-    return res.status(200).json({ msg: "Profile updated successfully" });
-  });
+      // If email changed, force is_verified to false and generate new OTP
+      if (emailChanged) {
+        updateFields.push("is_verified = ?");
+        updateValues.push(false);
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+        updateFields.push("otp_code = ?");
+        updateValues.push(otp);
+        updateFields.push("otp_expires_at = ?");
+        updateValues.push(otpExpiresAt);
+
+        updateValues.push(userId);
+
+        const sql = `UPDATE users SET ${updateFields.join(", ")} WHERE user_id = ?`;
+
+        connection.query(sql, updateValues, (err, result) => {
+          if (err) {
+            console.error("Database error:", err);
+            return res.status(500).send("Database error");
+          }
+
+          if (result.affectedRows === 0) {
+            return res.status(404).json({ msg: "User not found" });
+          }
+
+          // Send verification OTP to the new email
+          sendOTP(email, otp);
+
+          return res.status(200).json({
+            msg: "Profile updated. A verification code has been sent to your new email.",
+            emailChanged: true,
+          });
+        });
+      } else {
+        updateValues.push(userId);
+
+        const sql = `UPDATE users SET ${updateFields.join(", ")} WHERE user_id = ?`;
+
+        connection.query(sql, updateValues, (err, result) => {
+          if (err) {
+            console.error("Database error:", err);
+            return res.status(500).send("Database error");
+          }
+
+          if (result.affectedRows === 0) {
+            return res.status(404).json({ msg: "User not found" });
+          }
+
+          return res.status(200).json({ msg: "Profile updated successfully" });
+        });
+      }
+    },
+  );
 };
 
 // ================= LOGOUT =================

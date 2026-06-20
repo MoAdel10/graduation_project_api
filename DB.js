@@ -1,11 +1,25 @@
 const mysql = require("mysql2");
 require("dotenv").config();
 const bcrypt = require("bcrypt");
-const { name } = require("ejs");
 
 const DATABASE_NAME = process.env.DB_NAME || "RealEstateDB";
 
-const connection = mysql.createConnection({
+// ── Connection Pool (exported) ─────────────────────────────────────────────
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD || "",
+  port: process.env.DB_PORT || 3306,
+  database: DATABASE_NAME,
+  multipleStatements: true,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  dateStrings: true,
+});
+
+// ── Temporary connection for DB + table initialisation ─────────────────────
+const initConn = mysql.createConnection({
   host: process.env.DB_HOST || "localhost",
   user: process.env.DB_USER || "root",
   password: process.env.DB_PASSWORD || "",
@@ -13,41 +27,40 @@ const connection = mysql.createConnection({
   multipleStatements: true,
 });
 
-connection.connect((err) => {
+initConn.connect((err) => {
   if (err) {
     console.error("❌ Error connecting to MySQL:", err.message);
     throw new Error(`Error connecting to MySQL: ${err.message}`);
-  } else {
-    console.log(
-      `✅ Connected to MySQL server at: ${connection.config.host}:${connection.config.port}`,
-    );
-    initializeDatabase();
   }
-});
+  console.log(
+    `✅ Connected to MySQL server at: ${initConn.config.host}:${initConn.config.port}`,
+  );
 
-function initializeDatabase() {
-  connection.query(
+  initConn.query(
     `CREATE DATABASE IF NOT EXISTS \`${DATABASE_NAME}\`;`,
     (err) => {
       if (err) {
         console.error("❌ Error creating database:", err.message);
+        initConn.end();
         throw new Error(`Error creating database: ${err.message}`);
       }
       console.log(`📂 Database "${DATABASE_NAME}" is ready.`);
 
-      connection.changeUser({ database: DATABASE_NAME }, (err) => {
+      initConn.changeUser({ database: DATABASE_NAME }, (err) => {
         if (err) {
           console.error("❌ Error selecting database:", err.message);
+          initConn.end();
           throw new Error(`Error selecting database: ${err.message}`);
         }
         console.log(`🔄 Using database: ${DATABASE_NAME}`);
-        createTables();
+        createTables(initConn);
       });
     },
   );
-}
+});
 
-function createTables() {
+// ── Table DDL ──────────────────────────────────────────────────────────────
+function createTables(conn) {
   const usersTable = `
 CREATE TABLE IF NOT EXISTS users (
   user_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
@@ -93,6 +106,7 @@ CREATE TABLE IF NOT EXISTS users (
     listing_status ENUM('inactive', 'active', 'under_negotiation', 'sold', 'expired') DEFAULT 'inactive',
     listing_expiry DATETIME NULL,
 
+    is_visible BOOLEAN DEFAULT TRUE,
     is_verified BOOLEAN DEFAULT FALSE,
     is_available BOOLEAN DEFAULT FALSE,
     is_furnished BOOLEAN DEFAULT FALSE,
@@ -110,11 +124,13 @@ CREATE TABLE IF NOT EXISTS users (
     property_id INT NOT NULL,
     renter_id CHAR(36) NOT NULL,
     renting_type ENUM('DAY', 'MONTH') NOT NULL DEFAULT 'DAY',
-    request_state ENUM('PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'PAYMENT_PENDING', 'PAID') DEFAULT 'PENDING',
+    request_state ENUM('PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'PAYMENT_PENDING', 'PAID', 'REFUND_REQUESTED', 'REFUND_DENIED', 'REFUND_PROCESSING', 'REFUNDED') DEFAULT 'PENDING',
     total_price DECIMAL(10, 2) NOT NULL,
     check_in_date DATE NOT NULL,
     check_out_date DATE NOT NULL,
     payment_id VARCHAR(255),
+    reason TEXT NULL,
+    denied_at TIMESTAMP NULL DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (property_id) REFERENCES property(property_id) ON DELETE CASCADE,
     FOREIGN KEY (renter_id) REFERENCES users(user_id) ON DELETE CASCADE
@@ -144,14 +160,16 @@ CREATE TABLE IF NOT EXISTS users (
     invoice_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     lease_id CHAR(36) NOT NULL,
     renter_id CHAR(36) NOT NULL,
+    owner_id CHAR(36) NOT NULL,
     amount DECIMAL(10, 2) NOT NULL,
     due_date DATE NOT NULL,
     status ENUM('UNPAID', 'PAID', 'OVERDUE', 'VOID') DEFAULT 'UNPAID',
-    kashier_order_id VARCHAR(255), -- The custom ID you'll send to Kashier
+    kashier_order_id VARCHAR(255),
     paid_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (lease_id) REFERENCES lease(lease_id) ON DELETE CASCADE,
-    FOREIGN KEY (renter_id) REFERENCES users(user_id) ON DELETE CASCADE
+    FOREIGN KEY (renter_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_id) REFERENCES users(user_id) ON DELETE CASCADE
   );
 `;
 
@@ -185,30 +203,29 @@ CREATE TABLE IF NOT EXISTS users (
   CREATE TABLE IF NOT EXISTS paymentintents (
     payment_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
     user_id CHAR(36) NOT NULL,
-    property_id INT NOT NULL,
+    property_id INT NULL,
     payment_type ENUM('rent', 'withdraw', 'refund') NOT NULL,
     value DECIMAL(10, 2) NOT NULL,
-    payment_method ENUM('card', 'wallet') NOT NULL,
+    payment_method ENUM('card', 'wallet', 'bank_transfer') NOT NULL,
     status ENUM('pending', 'succeeded', 'failed', 'canceled') DEFAULT 'pending',
+    transfer_id VARCHAR(64) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (property_id) REFERENCES property(property_id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
   );
 `;
 
   const notificationTable = `
   CREATE TABLE IF NOT EXISTS notifications (
     notification_id CHAR(36) PRIMARY KEY DEFAULT (UUID()),
-    sender VARCHAR(36) NOT NULL,    -- Can be a User ID or a 'SYSTEM' identifier
-    receiver VARCHAR(36) NOT NULL,  -- The target User ID
-    event_type VARCHAR(50) NOT NULL, --  'PAYMENT_SUCCESS', 'RENT_REQUEST'
+    sender VARCHAR(36) NOT NULL,
+    receiver VARCHAR(36) NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
     notification_title VARCHAR(255) NOT NULL,
     notification_body TEXT,
-    metadata JSON,               -- Stores { reference_id: ..., type: ... }
-    viewed BOOLEAN DEFAULT FALSE, -- true/false
+    metadata JSON,
+    viewed BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
     
     INDEX idx_receiver (receiver),
     INDEX idx_viewed (viewed)
@@ -237,10 +254,8 @@ CREATE TABLE IF NOT EXISTS users (
     property_id INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
-    -- This UNIQUE constraint prevents duplicate threads for the same property/users
     UNIQUE INDEX idx_unique_chat (owner_id, renter_id, property_id),
     
-    -- Foreign Keys
     FOREIGN KEY (owner_id) REFERENCES users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (renter_id) REFERENCES users(user_id) ON DELETE CASCADE,
     FOREIGN KEY (property_id) REFERENCES property(property_id) ON DELETE CASCADE
@@ -256,20 +271,19 @@ CREATE TABLE IF NOT EXISTS users (
     property_id INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
-    -- Foreign Keys
     FOREIGN KEY (chat_id) REFERENCES chats(chat_id) ON DELETE CASCADE,
     FOREIGN KEY (sender_id) REFERENCES users(user_id) ON DELETE CASCADE
 );`;
 
   const sponserdTable = `CREATE TABLE IF NOT EXISTS sponsored_listings (
-    promotion_id INT AUTO_INCREMENT PRIMARY KEY, -- Unique ID for every purchase
+    promotion_id INT AUTO_INCREMENT PRIMARY KEY,
     property_id INT NOT NULL, 
     
     start_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     end_date DATETIME NOT NULL,
     amount_paid DECIMAL(10,2),
     
-    is_active BOOLEAN DEFAULT FALSE, -- Sentinel only flips this
+    is_active BOOLEAN DEFAULT FALSE,
     is_paid BOOLEAN DEFAULT FALSE,
     payment_ref VARCHAR(255) DEFAULT NULL,
 
@@ -288,9 +302,10 @@ CREATE TABLE IF NOT EXISTS users (
     FOREIGN KEY (property_id) REFERENCES property(property_id) ON DELETE CASCADE,
     FOREIGN KEY (rent_id) REFERENCES lease(lease_id) ON DELETE SET NULL
 );`;
+
   // --- Execution Logic ---
 
-  connection.query(adminsTable, async (err) => {
+  conn.query(adminsTable, async (err) => {
     if (err)
       return console.error("❌ Error creating admins table:", err.message);
     console.log("✅ admins table ready");
@@ -300,13 +315,13 @@ CREATE TABLE IF NOT EXISTS users (
       const superPassword = process.env.SUPERADMIN_PASSWORD;
       const saltRounds = parseInt(process.env.SALT_ROUNDS || 10);
 
-      connection.query(
+      conn.query(
         "SELECT * FROM admins WHERE role = 'super_admin' LIMIT 1",
         async (err, results) => {
           if (err) return console.error("❌ Error checking superadmin:", err);
           if (results.length === 0) {
             const hashed = await bcrypt.hash(superPassword, saltRounds);
-            connection.query(
+            conn.query(
               "INSERT INTO admins (email, password, role) VALUES (?, ?, 'super_admin')",
               [superEmail, hashed],
               (err) => {
@@ -325,7 +340,7 @@ CREATE TABLE IF NOT EXISTS users (
     }
   });
 
-  connection.query(usersTable, (err) => {
+  conn.query(usersTable, (err) => {
     if (err)
       return console.error("❌ Error creating users table:", err.message);
     console.log("✅ users table ready");
@@ -334,17 +349,16 @@ CREATE TABLE IF NOT EXISTS users (
       first_name: "Default",
       second_name: "User",
       email: "default@example.com",
-      password: "$2b$10$YAzxENe2MbnVNPHp0lchpuaHF4kHG9ST3SKMT/TORQu1ugukIsObq", //Password$123
+      password: "$2b$10$YAzxENe2MbnVNPHp0lchpuaHF4kHG9ST3SKMT/TORQu1ugukIsObq",
       is_verified: true,
     };
 
-    // Simplified to INSERT IGNORE to prevent syntax issues with subqueries
     const insertUserQuery = `
       INSERT IGNORE INTO users (first_name, second_name, email, password, is_verified)
       VALUES (?, ?, ?, ?, ?);
     `;
 
-    connection.query(
+    conn.query(
       insertUserQuery,
       [
         defaultUser.first_name,
@@ -360,7 +374,7 @@ CREATE TABLE IF NOT EXISTS users (
       },
     );
 
-    connection.query(propertyTable, (err) => {
+    conn.query(propertyTable, (err) => {
       if (err)
         return console.error("❌ Error creating property table:", err.message);
       console.log("✅ property table ready");
@@ -379,7 +393,7 @@ CREATE TABLE IF NOT EXISTS users (
         { name: "reviews", sql: reviewsTable },
       ];
       dependentTables.forEach((table) => {
-        connection.query(table.sql, (err) => {
+        conn.query(table.sql, (err) => {
           if (err)
             return console.error(
               `❌ Error creating ${table.name} table:`,
@@ -392,4 +406,4 @@ CREATE TABLE IF NOT EXISTS users (
   });
 }
 
-module.exports = connection;
+module.exports = pool;

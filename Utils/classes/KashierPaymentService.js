@@ -109,43 +109,78 @@ class KashierPaymentService {
     }
   };
 
-  sendMoney = async (amount, type, receiverData) => {
-  const url = "https://test-fep.kashier.io/v3/transfers/single";
+  sendMoney = async (amount, type, receiverData, recipientName = "Account Holder") => {
+    const url = "https://test-fep.kashier.io/v3/transfers/single";
 
-  // 1. Validation for Wallets
-  if (type === "wallet" && !receiverData.number.startsWith("01")) {
-    throw new Error("Invalid Egyptian wallet number. Must start with 01.");
-  }
+    console.log(amount, type, receiverData);
 
-  // 2. Build Dynamic Payload
-  const payload = {
-    amount: amount,
-    method: type,
-    recipientName: receiverData.name,
-    recipientNumber: receiverData.number,
-    merchantTransferId: `TR-${Date.now()}`,
+    // 1. Defensive: verify all required parameters exist
+    if (!amount || !type) {
+      throw new Error("Missing required parameters: amount and method are required.");
+    }
+
+    // 2. Defensive: verify receiverData exists and is a non-empty string
+    if (typeof receiverData !== "string" || !receiverData.trim()) {
+      throw new Error("receiverData must be a non-empty string (account / wallet number).");
+    }
+
+    const identifier = receiverData.trim();
+
+    // 3. Map frontend method names to Kashier API method values
+    const methodMap = {
+      bank_transfer: "bank",
+      card: "card",
+      wallet: "wallet",
+    };
+    const kashierMethod = methodMap[type];
+    if (!kashierMethod) {
+      throw new Error(`Unsupported withdrawal method: "${type}".`);
+    }
+
+    // 4. Wallet-specific validation (safe .startsWith() because we verified it's a string)
+    if (type === "wallet") {
+      if (!identifier.startsWith("01")) {
+        throw new Error("Invalid Egyptian wallet number. Must start with 01.");
+      }
+    }
+
+    // 5. Build Dynamic Payload
+    const payload = {
+      amount: parseFloat(amount).toFixed(2),
+      method: kashierMethod,
+      recipientName: recipientName,
+      recipientNumber: identifier,
+      merchantTransferId: `TR-${Date.now()}`,
+    };
+
+    // 6. Use valid Kashier bank shortcode for non-wallet transfers
+    if (type === "wallet") {
+      delete payload.recipientBank;
+    } else {
+      payload.recipientBank = "CIB";
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: this.sec_key,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody?.message || `Kashier gateway returned HTTP ${response.status}`);
+      }
+      const result = await response.json();
+      console.log("Kashier payout response:", result);
+      return result;
+    } catch (error) {
+      console.error(`Payout to ${type} failed:`, error);
+      throw error;
+    }
   };
-
-  // 3. Only add recipientBank if it's NOT a wallet
-  if (type !== "wallet" && receiverData.recipientBank) {
-    payload.recipientBank = receiverData.recipientBank;
-  }
-
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: this.sec_key,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-    return await response.json();
-  } catch (error) {
-    console.error(`Payout to ${type} failed:`, error);
-    throw error; 
-  }
-};
 
   getTransferStatus = async (transferId) => {
   const url = `https://test-api.kashier.io/v2/transfers/${transferId}`;

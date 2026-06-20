@@ -1,42 +1,28 @@
-const triggerReverification = (connection, propertyId, userId, callback) => {
-  connection.beginTransaction((err) => {
+const triggerReverification = (pool, propertyId, userId, callback) => {
+  pool.query("SELECT property_type FROM property WHERE property_id = ?", [propertyId], (err, results) => {
     if (err) return callback(err);
 
-    // Fetch the property_type first to determine default status and availability
-    connection.query("SELECT property_type FROM property WHERE property_id = ?", [propertyId], (err, results) => {
-      if (err) return connection.rollback(() => callback(err));
-      
-      const propertyType = results[0]?.property_type || 'for_rent';
-      const isRent = propertyType === 'for_rent';
-      
-      // For rent, keep it active and available by default
-      const listingStatus = isRent ? 'active' : 'inactive';
-      const isAvailable = isRent ? 1 : 0;
-      
-      const updateSql = `
-        UPDATE property 
-        SET is_verified = FALSE, is_available = ?, listing_status = ? 
-        WHERE property_id = ?
-      `;
-      
-      connection.query(updateSql, [isAvailable, listingStatus, propertyId], (err) => {
-        if (err) return connection.rollback(() => callback(err));
+    const propertyType = results[0]?.property_type || 'for_rent';
+    const isRent = propertyType === 'for_rent';
+    const listingStatus = isRent ? 'active' : 'inactive';
+    const isAvailable = isRent ? 1 : 0;
 
-        const requestSql = `
-          INSERT INTO verificationrequests (property_id, user_id, status) 
-          VALUES (?, ?, 'pending')
-        `;
+    pool.query(
+      "UPDATE property SET is_verified = FALSE, is_available = ?, listing_status = ? WHERE property_id = ?",
+      [isAvailable, listingStatus, propertyId],
+      (err) => {
+        if (err) return callback(err);
 
-        connection.query(requestSql, [propertyId, userId], (err) => {
-          if (err) return connection.rollback(() => callback(err));
-
-          connection.commit((err) => {
-            if (err) return connection.rollback(() => callback(err));
-            callback(null); 
-          });
-        });
-      });
-    });
+        pool.query(
+          "INSERT INTO verificationrequests (property_id, user_id, status) VALUES (?, ?, 'pending')",
+          [propertyId, userId],
+          (err) => {
+            if (err) return callback(err);
+            callback(null);
+          }
+        );
+      }
+    );
   });
 };
 

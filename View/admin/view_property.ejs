@@ -1,167 +1,181 @@
 <%- include('../partials/header') %>
 
 <style>
-    .inspect-card {
-        background: #fff;
-        padding: 30px;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-    }
     .prop-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 25px;
-        border-bottom: 1px solid #eee;
-        padding-bottom: 15px;
+        margin-bottom: 28px;
+        padding-bottom: 20px;
+        border-bottom: 2px solid var(--border);
     }
-    .grid-container {
+    .prop-header h2 { margin:0; font-size:22px; }
+    .prop-header h2 span { color: var(--gold); }
+
+    .inspect-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 40px;
     }
-    .info-table {
-        width: 100%;
-        border-collapse: collapse;
+    @media (max-width: 900px) {
+        .inspect-grid { grid-template-columns: 1fr; }
     }
+
+    .inspect-section h3 {
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--dk);
+        margin: 0 0 16px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .info-table { width: 100%; border-collapse: collapse; }
     .info-table td {
         padding: 10px 0;
-        border-bottom: 1px solid #f9f9f9;
+        border-bottom: 1px solid var(--border);
+        font-size: 14px;
     }
-    .label {
+    .info-table .label {
         font-weight: 600;
-        color: #555;
-        width: 120px;
+        color: var(--muted);
+        width: 130px;
     }
+
     .desc-box {
-        background: #f8f9fa;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 4px solid #333;
-        margin-top: 10px;
-        color: #444;
-        line-height: 1.6;
+        background: #f8fafc;
+        padding: 16px 20px;
+        border-radius: 10px;
+        border-left: 4px solid var(--gold);
+        color: var(--text);
+        line-height: 1.7;
+        font-size: 14px;
+        margin-top: 8px;
+    }
+
+    .image-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
     }
     .image-item {
-        position: relative;
-        overflow: hidden;
         border-radius: 10px;
-        aspect-ratio: 4 / 3;
-        background: #eee;
-        transition: transform 0.2s;
+        overflow: hidden;
+        aspect-ratio: 4/3;
+        background: #e2e8f0;
+        transition: transform .2s;
     }
     .image-item:hover {
         transform: scale(1.02);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        box-shadow: 0 4px 12px rgba(0,0,0,.12);
     }
     .image-item img {
         width: 100%;
         height: 100%;
         object-fit: cover;
+        display: block;
     }
+
     .doc-link {
         display: flex;
         align-items: center;
-        padding: 12px 15px;
-        background: #fff;
-        border: 1px solid #dee2e6;
+        gap: 10px;
+        padding: 12px 16px;
+        background: #f8fafc;
+        border: 1px solid var(--border);
         border-radius: 8px;
-        color: #333;
+        color: var(--text);
         text-decoration: none;
-        transition: all 0.2s;
+        font-size: 14px;
+        transition: all .2s;
     }
     .doc-link:hover {
-        background: #f1f3f5;
-        border-color: #adb5bd;
+        border-color: var(--gold);
+        background: rgba(212,175,55,.04);
+    }
+
+    .action-bar {
+        margin-top: 40px;
+        padding-top: 24px;
+        border-top: 2px solid var(--border);
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+        align-items: center;
     }
 </style>
 
-<div class="inspect-card">
+<div class="card" style="padding:32px;">
     <div class="prop-header">
-        <h2 style="margin:0;">Inspect Property: <span style="color: #007bff;"><%= property.property_name %></span></h2>
-        <a href="/admin/verification/requests" style="text-decoration: none; color: #666;">← Back to Requests</a>
+        <h2>Inspect: <span><%= property.property_name %></span></h2>
+        <a href="/admin/verification/requests" class="btn btn-ghost btn-sm">← Back</a>
     </div>
 
-    <div class="grid-container">
-        <div class="details-section">
-            <h3 style="margin-top:0;">Basic Details</h3>
+    <div class="inspect-grid">
+        <div class="inspect-section">
+            <h3>📋 Basic Details</h3>
             <table class="info-table">
-                <tr>
-                    <td class="label">Location</td>
-                    <td><%= property.location %></td>
-                </tr>
-                <tr>
-                    <td class="label">Price</td>
-                    <td style="color: #28a745; font-weight: bold;">$<%= property.price_per_day %> / Night</td>
-                </tr>
-                <tr>
-                    <td class="label">Dimensions</td>
-                    <td><%= property.size %> m</td>
-                </tr>
-                <tr>
-                    <td class="label">Capacity</td>
-                    <td><%= property.bedrooms_no %> Bedrooms | <%= property.bathrooms_no %> Bathrooms</td>
-                </tr>
+                <tr><td class="label">Location</td><td><%= property.location %></td></tr>
+                <tr><td class="label">Price</td><td style="color:var(--gold); font-weight:700;">$<%= property.price_per_day %> / Night</td></tr>
+                <tr><td class="label">Dimensions</td><td><%= property.size %> m²</td></tr>
+                <tr><td class="label">Capacity</td><td><%= property.bedrooms_no %> Bedrooms &middot; <%= property.bathrooms_no %> Bathrooms</td></tr>
                 <tr>
                     <td class="label">Verification</td>
-                    <td><%= property.is_verified ? "✅ Verified" : "❌ Unverified" %></td>
+                    <td>
+                        <span class="badge <%= property.is_verified ? 'badge-green' : 'badge-red' %>">
+                            <%= property.is_verified ? "Verified" : "Unverified" %>
+                        </span>
+                    </td>
                 </tr>
             </table>
 
-            <h4 style="margin-bottom: 5px;">Description</h4>
-            <div class="desc-box">
-                <%= property.property_desc %>
-            </div>
+            <h3 style="margin-top:28px;">📝 Description</h3>
+            <div class="desc-box"><%= property.property_desc %></div>
 
-            <h4 style="margin-bottom: 10px; margin-top:25px;">Ownership Documents</h4>
-            <div style="display: grid; gap: 10px;">
-                <% if (property.ownership_proofs) { 
+            <h3 style="margin-top:28px;">📎 Ownership Documents</h3>
+            <div style="display:grid; gap:8px;">
+                <% if (property.ownership_proofs) {
                     let proofs = typeof property.ownership_proofs === 'string' ? JSON.parse(property.ownership_proofs) : property.ownership_proofs;
                     proofs.forEach((proof, index) => { %>
                         <a href="/<%= proof %>" target="_blank" class="doc-link">
-                            <span style="font-size: 20px; margin-right: 10px;">📄</span> 
+                            <span>📄</span>
                             <span>Verification Proof #<%= index + 1 %></span>
-                            <span style="margin-left: auto; font-size: 12px; color: #888;">View File ↗</span>
+                            <span style="margin-left:auto; font-size:11px; color:var(--muted);">View ↗</span>
                         </a>
                 <% })} else { %>
-                    <p style="color: #dc3545; font-size: 14px;">No documents provided.</p>
+                    <p style="color:var(--danger); font-size:14px;">No documents provided.</p>
                 <% } %>
             </div>
         </div>
 
-        <div class="gallery-section">
-            <h3 style="margin-top:0;">Property Gallery</h3>
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
-                <% if (property.images) { 
+        <div class="inspect-section">
+            <h3>🖼️ Property Gallery</h3>
+            <div class="image-grid">
+                <% if (property.images) {
                     let imgs = typeof property.images === 'string' ? JSON.parse(property.images) : property.images;
                     imgs.forEach(img => { %>
                         <div class="image-item">
-                            <img src="/<%= img %>" alt="Property View">
+                            <img src="/<%= img %>" alt="Property View" loading="lazy">
                         </div>
                 <% })} else { %>
-                    <p>No images found.</p>
+                    <p style="color:var(--muted);">No images found.</p>
                 <% } %>
             </div>
         </div>
     </div>
 
-    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 15px; align-items: center;">
-        
+    <div class="action-bar">
         <% if (property.request_id) { %>
-            <form action="/admin/verification/reject/<%= property.request_id %>" method="POST" style="display: flex; gap: 10px;">
-                <input type="text" name="reason" placeholder="Reason for rejection..." required style="padding: 10px; border-radius: 8px; border: 1px solid #ccc;">
-                <button type="submit" style="padding: 12px 25px; border-radius: 8px; border: 1px solid #dc3545; color: #dc3545; background: none; font-weight: bold; cursor: pointer;">
-                    Reject
-                </button>
+            <form action="/admin/verification/reject/<%= property.request_id %>" method="POST" style="display:flex; gap:8px; align-items:center;">
+                <input type="text" name="reason" placeholder="Rejection reason..." style="width:220px; padding:8px 12px;">
+                <button type="submit" class="btn btn-red">Reject</button>
             </form>
-
-            <form action="/admin/verification/approve/<%= property.request_id %>" method="POST">
-                <button type="submit" style="padding: 12px 35px; border-radius: 8px; border: none; color: white; background: #28a745; font-weight: bold; cursor: pointer; transition: background 0.2s;">
-                    Approve Verification
-                </button>
+            <form action="/admin/verification/approve/<%= property.request_id %>" method="POST" style="margin:0;">
+                <button type="submit" class="btn btn-gold">Approve Verification</button>
             </form>
         <% } else { %>
-            <p style="color: #888; font-style: italic;">Viewing mode: No pending verification requests for this property.</p>
+            <p style="color:var(--muted); font-style:italic; font-size:14px;">Viewing mode — No pending verification requests for this property.</p>
         <% } %>
     </div>
 </div>

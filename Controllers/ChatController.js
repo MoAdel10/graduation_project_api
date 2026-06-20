@@ -55,13 +55,15 @@ const getInbox = async (req, res) => {
   const sql = `
     SELECT 
       c.chat_id,
+      c.property_id,
       p.property_name,
-      p.images AS property_images, -- Changed from image_url to images
-      CONCAT(u.first_name, ' ', u.second_name) AS partner_name, -- Fixed full_name issue
+      p.images AS property_images,
+      CONCAT(u.first_name, ' ', u.second_name) AS partner_name,
       u.user_id AS partner_id,
       m.content AS last_message,
       m.created_at AS last_message_time,
-      (SELECT COUNT(*) FROM messages WHERE chat_id = c.chat_id AND is_read = 0 AND sender_id != ?) AS unread_count
+      (SELECT COUNT(*) FROM messages WHERE chat_id = c.chat_id AND is_read = 0 AND sender_id != ?) AS unread_count,
+      NOT p.is_visible AS is_property_deleted
     FROM chats c
     JOIN property p ON c.property_id = p.property_id
     JOIN users u ON u.user_id = IF(c.owner_id = ?, c.renter_id, c.owner_id)

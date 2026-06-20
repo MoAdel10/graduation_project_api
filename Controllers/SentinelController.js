@@ -6,7 +6,7 @@ const runRentalPulse = (req, res) => {
 
   // --- TASK 1: COMPLETED LEASES (Cleanup) ---
   const expiredSql = `
-    SELECT l.lease_id, l.renter_id, l.owner_id, p.property_name 
+    SELECT l.lease_id, l.renter_id, l.owner_id, p.property_name, p.property_id
     FROM lease l
     JOIN property p ON l.property_id = p.property_id
     WHERE l.check_out_date < CURDATE() AND l.status = 'IN_PROGRESS'
@@ -27,7 +27,7 @@ const runRentalPulse = (req, res) => {
             type: "LEASE_COMPLETED",
             title: "Stay Completed! 🏠",
             body: `Your stay at "${lease.property_name}" has officially ended.`,
-            metadata: { lease_id: lease.lease_id, type: "lease_update" },
+            metadata: { lease_id: lease.lease_id, property_id: lease.property_id, type: "lease_update" },
           });
         },
       );
@@ -52,46 +52,33 @@ const runRentalPulse = (req, res) => {
     leasesToBill.forEach((lease) => {
       const invoiceId = crypto.randomUUID();
 
-      connection.beginTransaction((tErr) => {
-        if (tErr) return;
+      connection.query(
+        "INSERT INTO invoices (invoice_id, lease_id, renter_id, owner_id, amount, due_date, status) VALUES (?, ?, ?, ?, ?, DATE_ADD(CURDATE(), INTERVAL 3 DAY), 'UNPAID')",
+        [invoiceId, lease.lease_id, lease.renter_id, lease.owner_id, lease.price_value],
+        (invErr) => {
+          if (invErr) return console.error("❌ Pulse billing insert error:", invErr);
 
-        const invSql = `
-          INSERT INTO invoices (invoice_id, lease_id, renter_id, amount, due_date, status)
-          VALUES (?, ?, ?, ?, DATE_ADD(CURDATE(), INTERVAL 3 DAY), 'UNPAID')
-        `;
+          connection.query(
+            "UPDATE lease SET next_billing_date = DATE_ADD(next_billing_date, INTERVAL 1 MONTH) WHERE lease_id = ?",
+            [lease.lease_id],
+            (updLErr) => {
+              if (updLErr) return console.error("❌ Pulse billing update error:", updLErr);
 
-        connection.query(
-          invSql,
-          [invoiceId, lease.lease_id, lease.renter_id, lease.price_value],
-          (invErr) => {
-            if (invErr) return connection.rollback();
-
-            const updateLeaseSql = `
-            UPDATE lease SET next_billing_date = DATE_ADD(next_billing_date, INTERVAL 1 MONTH) 
-            WHERE lease_id = ?
-          `;
-
-            connection.query(updateLeaseSql, [lease.lease_id], (updLErr) => {
-              if (updLErr) return connection.rollback();
-
-              connection.commit(() => {
-                // Notification matches your PaymentLink and Webhook expectation
-                notifier.send({
-                  sender: "SYSTEM",
-                  receiver: lease.renter_id,
-                  type: "RENT_DUE_NOTICE",
-                  title: "Rent Due in 3 Days ⏳",
-                  body: `Monthly rent for "${lease.property_name}" is due soon (${lease.price_value} EGP).`,
-                  metadata: {
-                    invoice_id: invoiceId, // Important for GetPaymentLink
-                    type: "invoice_payment",
-                  },
-                });
+              notifier.send({
+                sender: "SYSTEM",
+                receiver: lease.renter_id,
+                type: "RENT_DUE_NOTICE",
+                title: "Rent Due in 3 Days ⏳",
+                body: `Monthly rent for "${lease.property_name}" is due soon (${lease.price_value} EGP).`,
+                metadata: {
+                  invoice_id: invoiceId,
+                  type: "invoice_payment",
+                },
               });
-            });
-          },
-        );
-      });
+            },
+          );
+        },
+      );
     });
   });
 

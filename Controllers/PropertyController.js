@@ -222,8 +222,8 @@ const getProperties = (req, res) => {
     featured 
   } = req.query;
 
-  // 1. Base SQL query
-  let sql = "SELECT * FROM property WHERE 1=1";
+  // 1. Base SQL query — only show non-deleted properties
+  let sql = "SELECT * FROM property WHERE is_visible = TRUE";
   const params = [];
 
   // 2. Explicitly filter for sponsored properties if frontend passes ?featured=true
@@ -301,7 +301,7 @@ const getPropertyById = (req, res) => {
       u.email AS owner_email
     FROM property p
     LEFT JOIN users u ON p.owner_id = u.user_id
-    WHERE p.property_id = ?
+    WHERE p.property_id = ? AND p.is_visible = TRUE
   `;
 
   connection.query(sql, [id], (err, results) => {
@@ -523,24 +523,9 @@ const deleteProperty = (req, res) => {
           .json({ msg: "Unauthorized to delete this property" }); // 403 if user is not owner
       }
 
-      // Delete property images and proofs from the filesystem
-      try {
-        // FIX: Remove JSON.parse. The driver returns arrays.
-        const images = property.images || [];
-        const proofs = property.ownership_proofs || [];
-
-        [...images, ...proofs].forEach((filePath) => {
-          fs.unlink(path.join(__dirname, "..", filePath), (err) => {
-            if (err) console.warn("⚠️ Could not delete file:", filePath);
-          });
-        });
-      } catch (err) {
-        console.error("⚠️ Error processing file paths for deletion:", err);
-      }
-
-      // Delete the property from the database
+      // Soft delete — mark property as invisible (retain files for historical reference)
       connection.query(
-        "DELETE FROM property WHERE property_id = ?",
+        "UPDATE property SET is_visible = FALSE WHERE property_id = ?",
         [id],
         (err) => {
           if (err) return res.status(500).json({ msg: "Database error" });
@@ -567,6 +552,7 @@ const getMyProperty = (req, res) => {
       price_per_day, 
       is_available, 
       is_verified,
+      is_visible,
       is_furnished,
       is_sponsored,
       property_type,
@@ -599,6 +585,26 @@ const getMyProperty = (req, res) => {
     res.status(200).json(formattedResults);
   });
 };
+const getBookedDates = (req, res) => {
+  const { id } = req.params;
+
+  const sql = `
+    SELECT check_in_date, check_out_date FROM renting_request
+    WHERE property_id = ? AND request_state IN ('PENDING', 'ACCEPTED', 'PAID')
+    UNION
+    SELECT check_in_date, check_out_date FROM lease
+    WHERE property_id = ? AND status IN ('UPCOMING', 'IN_PROGRESS', 'OVERDUE')
+  `;
+
+  connection.query(sql, [id, id], (err, results) => {
+    if (err) {
+      console.error("❌ getBookedDates error:", err);
+      return res.status(500).json({ msg: "Database error" });
+    }
+    res.status(200).json({ success: true, data: results });
+  });
+};
+
 module.exports = {
   addProperty,
   getProperties,
@@ -606,5 +612,6 @@ module.exports = {
   editPropertyInfo,
   editPropertyImages,
   deleteProperty,
-  getMyProperty
+  getMyProperty,
+  getBookedDates,
 };

@@ -1,9 +1,9 @@
 <%- include('../partials/header') %>
 
 <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h2>Ownership Verification Requests</h2>
-        <span class="badge">Pending: <%= requests.length %></span>
+    <div class="card-header">
+        <h2 class="card-title">Ownership Verification Requests</h2>
+        <span class="badge badge-gold">Pending: <%= requests.length %></span>
     </div>
 
     <table>
@@ -22,25 +22,21 @@
                 <% requests.forEach(req => { %>
                 <tr>
                     <td><%= req.property_id %></td>
-                    <td><%= req.property_name %></td>
-                        
+                    <td><strong><%= req.property_name %></strong></td>
+                    <td><%= req.first_name %> <%= req.second_name %></td>
                     <td>
-                        <strong><%= req.first_name %> <%= req.second_name %></strong><br>
-                    </td>
-                   <td>
-                         <a href="/admin/properties/view/<%= req.property_id %>" class="btn-view">
+                        <a href="/admin/properties/view/<%= req.property_id %>" class="btn btn-ghost btn-sm">
                             Inspect Property
-                         </a>
+                        </a>
                     </td>
                     <td><%= new Date(req.created_at).toLocaleDateString() %></td>
-                    <td>    
-                        <div style="display: flex; gap: 10px;">
-                            <form action="/admin/verification/approve/<%= req.request_id %>" method="POST" style="margin: 0;">
-                                <button type="submit" style="background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Approve</button>
+                    <td>
+                        <div class="actions">
+                            <form action="/admin/verification/approve/<%= req.request_id %>" method="POST" style="margin:0;">
+                                <button type="submit" class="btn btn-green btn-sm">Approve</button>
                             </form>
-                            
-                            <form action="/admin/verification/reject/<%= req.request_id %>" method="POST" style="margin: 0;">
-                                <button type="submit" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Reject</button>
+                            <form action="/admin/verification/reject/<%= req.request_id %>" method="POST" style="margin:0;">
+                                <button type="submit" class="btn btn-red btn-sm">Reject</button>
                             </form>
                         </div>
                     </td>
@@ -48,7 +44,7 @@
                 <% }) %>
             <% } else { %>
                 <tr>
-                    <td colspan="6" style="text-align: center; padding: 20px; color: #666;">No pending verification requests found.</td>
+                    <td colspan="6" class="empty">No pending verification requests found.</td>
                 </tr>
             <% } %>
         </tbody>

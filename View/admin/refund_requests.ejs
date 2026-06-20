@@ -1,0 +1,53 @@
+<%- include('../partials/header') %>
+
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Refund Requests</h2>
+        <span class="badge badge-gold">Pending: <%= requests.length %></span>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Request ID</th>
+                <th>Property</th>
+                <th>Renter</th>
+                <th>Amount</th>
+                <th>Date</th>
+                <th>Reason</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            <% if (requests.length > 0) { %>
+                <% requests.forEach(req => { %>
+                <tr>
+                    <td><code><%= req.request_id.slice(0, 8) %></code>&hellip;</td>
+                    <td><strong><%= req.property_name %></strong></td>
+                    <td><%= req.first_name %> <%= req.second_name %><br><small style="color:var(--muted);"><%= req.email %></small></td>
+                    <td><strong>EGP <%= Number(req.total_price).toLocaleString() %></strong></td>
+                    <td><%= new Date(req.created_at).toLocaleDateString() %></td>
+                    <td><%= req.reason || '—' %></td>
+                    <td>
+                        <div class="actions">
+                            <form action="/admin/refund-requests/<%= req.request_id %>/approve" method="POST" style="margin:0;">
+                                <button type="submit" class="btn btn-green btn-sm">Approve</button>
+                            </form>
+                            <form action="/admin/refund-requests/<%= req.request_id %>/deny" method="POST" style="margin:0; display:flex; gap:4px;">
+                                <input type="text" name="reason" placeholder="Reason" style="width:100px; padding:4px 8px; font-size:12px;">
+                                <button type="submit" class="btn btn-red btn-sm">Deny</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                <% }) %>
+            <% } else { %>
+                <tr>
+                    <td colspan="7" class="empty">No pending refund requests.</td>
+                </tr>
+            <% } %>
+        </tbody>
+    </table>
+</div>
+
+<%- include('../partials/footer') %>

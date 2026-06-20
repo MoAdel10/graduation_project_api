@@ -2,6 +2,7 @@ const express = require("express");
 const connection = require("./DB");
 const cors = require("cors");
 const http = require("http");
+const path = require("path");
 const mountRoutes = require("./Routes/Routes");
 require("dotenv").config();
 const cookieParser = require("cookie-parser");
@@ -33,18 +34,16 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 // app.use(cors());
 
-app.use(cors({
-  origin: [
-    'https://aqar-tan.vercel.app', // Your Vercel frontend
-    'http://localhost:5173',       // Local frontend testing
-    'http://localhost:3000'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning'],
-  credentials: true
-}));
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
 app.use(cookieParser());
-app.use("/uploads", express.static("uploads"));
+
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 mountRoutes(app);
 

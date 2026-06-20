@@ -17,7 +17,11 @@ const getLeasesAsRenter = (req, res) => {
 const getLeasesAsOwner = (req, res) => {
   const ownerId = req.user.userId;
 
-  const sql = "SELECT * FROM lease WHERE owner_id = ? ORDER BY check_in_date DESC";
+  const sql = `SELECT l.*, CONCAT(u.first_name, ' ', u.second_name) AS renter_name
+               FROM lease l
+               JOIN users u ON l.renter_id = u.user_id
+               WHERE l.owner_id = ?
+               ORDER BY l.check_in_date DESC`;
 
   connection.query(sql, [ownerId], (err, results) => {
     if (err) {
@@ -32,7 +36,10 @@ const getLeaseById = (req, res) => {
   const { leaseId } = req.params;
   const userId = req.user.userId;
 
-  const sql = "SELECT * FROM lease WHERE lease_id = ?";
+  const sql = `SELECT l.*, p.property_name, p.location, p.images, p.price_value
+               FROM lease l
+               JOIN property p ON l.property_id = p.property_id
+               WHERE l.lease_id = ?`;
 
   connection.query(sql, [leaseId], (err, results) => {
     if (err) {

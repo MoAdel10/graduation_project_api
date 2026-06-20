@@ -18,11 +18,12 @@ const storage = multer.diskStorage({
   },
 });
 
-// Accept only image files
+// Accept images for property photos; images + PDF for ownership proof
 const fileFilter = (req, file, cb) => {
   const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+  if (file.fieldname === "ownershipProof") allowedTypes.push("application/pdf");
   if (allowedTypes.includes(file.mimetype)) cb(null, true);
-  else cb(new Error("❌ Only image files are allowed (jpeg, jpg, png, webp)!"), false);
+  else cb(new Error("❌ Only image files (jpeg, jpg, png, webp) and PDFs are allowed!"), false);
 };
 
 // Initialize multer
